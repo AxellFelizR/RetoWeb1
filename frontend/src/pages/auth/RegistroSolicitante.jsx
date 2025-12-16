@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { useAuthStore } from '../../store/authStore'
 import { authAPI } from '../../services/api'
 import toast from 'react-hot-toast'
 
@@ -17,7 +16,6 @@ const RegistroSolicitante = () => {
   })
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
-  const setUser = useAuthStore((state) => state.setUser)
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -33,9 +31,17 @@ const RegistroSolicitante = () => {
 
     try {
       const response = await authAPI.registroSolicitante(formData)
-      setUser(response.data.solicitante, response.data.token)
-      toast.success('¡Registro exitoso!')
-      navigate('/dashboard')
+      const correoEnviado = response?.data?.correoEnviado
+      const correoOmitido = response?.data?.correoOmitido
+
+      if (correoEnviado) {
+        toast.success('Revisa tu correo para confirmar la cuenta')
+      } else if (correoOmitido) {
+        toast('Registro guardado. El envío de correos está deshabilitado en este entorno, solicita el enlace al administrador.', { icon: 'ℹ️' })
+      } else {
+        toast('Registro guardado, pero no pudimos enviar el correo. Contacta al administrador para recibir el enlace.', { icon: '⚠️' })
+      }
+      navigate('/login', { replace: true })
     } catch (error) {
       toast.error(error.message || 'Error en el registro')
     } finally {
@@ -77,22 +83,6 @@ const RegistroSolicitante = () => {
               </select>
             </div>
 
-            {/* Nombre completo */}
-            <div className="form-group">
-              <label htmlFor="nombre_completo" className="form-label">
-                Nombre Completo
-              </label>
-              <input
-                id="nombre_completo"
-                type="text"
-                name="nombre_completo"
-                className="input-field"
-                value={formData.nombre_completo}
-                onChange={handleChange}
-                required
-              />
-            </div>
-
             {/* Cédula */}
             <div className="form-group">
               <label htmlFor="cedula_identidad" className="form-label">
@@ -107,6 +97,22 @@ const RegistroSolicitante = () => {
                 onChange={handleChange}
                 required
                 placeholder="000-0000000-0"
+              />
+            </div>
+
+            {/* Nombre completo */}
+            <div className="form-group">
+              <label htmlFor="nombre_completo" className="form-label">
+                Nombre Completo
+              </label>
+              <input
+                id="nombre_completo"
+                type="text"
+                name="nombre_completo"
+                className="input-field"
+                value={formData.nombre_completo}
+                onChange={handleChange}
+                required
               />
             </div>
 

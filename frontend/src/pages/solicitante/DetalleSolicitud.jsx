@@ -10,6 +10,7 @@ import {
   TIPOS_TRAMITE_MAP
 } from '../../constants/solicitudOptions'
 import { buildCamposResumen } from '../../utils/solicitudHelpers'
+import { useAuthStore } from '../../store/authStore'
 
 const logError = (message, error) => {
   if (import.meta.env.DEV) {
@@ -22,6 +23,7 @@ const DetalleSolicitud = () => {
   const { id } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
+  const currentUser = useAuthStore((state) => state.user)
   const justCreated = Boolean(location.state?.justCreated)
   const justResubmitted = Boolean(location.state?.justResubmitted)
   const wizardSummary = location.state?.wizardSummary || null
@@ -262,6 +264,8 @@ const DetalleSolicitud = () => {
           timeStyle: 'short'
         })
   }, [])
+
+  const puedeVerDetalleInterno = currentUser?.tipo_usuario === 'EMPLEADO'
 
   const resolveDocSummaryLabel = useCallback((doc) => {
     if (doc.adjuntado) return 'Adjuntado'
@@ -582,6 +586,12 @@ const DetalleSolicitud = () => {
                       <p className="text-xs text-gray-600">
                         {formatDateTime(evento.fecha_cambio)}
                       </p>
+                      {puedeVerDetalleInterno && (evento.empleado_nombre || evento.empleado_rol) && (
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          Atendido por {evento.empleado_nombre || 'Personal interno'}
+                          {evento.empleado_rol ? ` (${evento.empleado_rol})` : ''}
+                        </p>
+                      )}
                       {(evento.motivo_cambio || evento.comentario_adicional) && (
                         <p className="text-xs text-gray-700 mt-1">
                           {evento.motivo_cambio || evento.comentario_adicional}

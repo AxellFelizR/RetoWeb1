@@ -18,6 +18,7 @@ import empleadosRoutes from './routes/empleados.routes.js';
 import reportesRoutes from './routes/reportes.routes.js';
 import bandejaRoutes from './routes/bandeja.routes.js';
 import serviciosRoutes from './routes/servicios.routes.js';
+import formularioRequisitosRoutes from './routes/formularioRequisitos.routes.js';
 
 // Middleware de error
 import { errorHandler } from './middleware/errorHandler.js';
@@ -46,12 +47,20 @@ app.use(cors({
 }));
 
 // Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100, // límite de 100 requests por ventana
-  message: 'Demasiadas solicitudes desde esta IP, intente más tarde.'
-});
-app.use('/api/', limiter);
+const rateLimitEnabled = process.env.RATE_LIMIT_ENABLED !== 'false';
+const rateLimitWindowMinutes = Number(process.env.RATE_LIMIT_WINDOW_MINUTES || 15);
+const rateLimitMaxRequests = Number(process.env.RATE_LIMIT_MAX || 1000);
+
+if (rateLimitEnabled) {
+  const limiter = rateLimit({
+    windowMs: rateLimitWindowMinutes * 60 * 1000,
+    max: rateLimitMaxRequests,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: 'Demasiadas solicitudes desde esta IP, intente más tarde.'
+  });
+  app.use('/api/', limiter);
+}
 
 // Body parser
 app.use(express.json({ limit: '50mb' }));
@@ -84,6 +93,7 @@ app.use('/api/empleados', empleadosRoutes);
 app.use('/api/bandeja', bandejaRoutes);
 app.use('/api/reportes', reportesRoutes);
 app.use('/api/servicios', serviciosRoutes);
+app.use('/api/formulario-requisitos', formularioRequisitosRoutes);
 
 // ============================================
 // MANEJO DE RUTAS NO ENCONTRADAS

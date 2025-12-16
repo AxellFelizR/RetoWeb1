@@ -86,7 +86,7 @@ const BandejaDNCD = () => {
     setHistorialActivo(solicitudId)
   }, [historialActivo, historiales])
 
-  const formatEstado = (estado) => (estado || 'SIN ESTADO').replace(/_/g, ' ')
+  const formatEstado = (estado) => (estado ? estado : 'EN_DNCD').replace(/_/g, ' ')
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
@@ -275,7 +275,7 @@ const BandejaDNCD = () => {
                       <p className="text-xs text-gray-500">{solicitud.nombre_tramite || ''}</p>
                     </td>
                     <td className="text-sm text-gray-700">
-                      {solicitud.numero_certificado || solicitud.num_resolucion || 'Pendiente'}
+                      {solicitud.numero_certificado || solicitud.num_resolucion || 'Entregado'}
                     </td>
                     <td className="text-sm text-gray-600">
                       {renderFecha(solicitud, solicitud.fecha_entrega || solicitud.fecha_actualizacion)}

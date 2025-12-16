@@ -167,4 +167,4 @@
 - **Tailwind CSS** impulsa los componentes `card`, `btn-primary` y la paleta institucional definida en `tailwind.config.js`.
 - **React Hot Toast** brinda comentarios instantáneos en flujos críticos (validación de ventanilla, transiciones de estado, subida de archivos).
 - **date-fns / react-datepicker** aseguran que todas las fechas se muestren con formato local `es-DO` y se respeten los límites del trámite.
-- **Componentes especializados** como `react-multi-select-component` y `react-icons` mejoran el wizard de sustancias y la UX de las bandejas.
+- **Componentes especializados** como `react-multi-select-component` y `react-icons` mejoran el wizard de sustancias y la UX de las bandejas.el

@@ -9,6 +9,7 @@ import {
   TIPOS_SERVICIO,
   TIPOS_TRAMITE
 } from '../../constants/solicitudOptions'
+import { parseMontoDesdeLabel } from '../../utils/solicitudHelpers'
 
 const iterateServiceFields = (serviceConfig, callback) => {
   if (!serviceConfig?.sections) return
@@ -73,7 +74,6 @@ const CrearSolicitud = ({ solicitudId: solicitudIdProp = null } = {}) => {
   const [tiposServicio, setTiposServicio] = useState(TIPOS_SERVICIO)
   const [cargandoServicios, setCargandoServicios] = useState(false)
   const [toggles, setToggles] = useState({})
-
   const tiposTramite = TIPOS_TRAMITE
 
   const userDefaults = useMemo(() => {
@@ -341,6 +341,7 @@ const CrearSolicitud = ({ solicitudId: solicitudIdProp = null } = {}) => {
   }
 
   const collectMissingFieldLabels = () => {
+    if (!currentServiceConfig) return []
     const missing = []
     iterateServiceFields(currentServiceConfig, (field) => {
       if (!shouldShowField(field)) return
@@ -360,13 +361,15 @@ const CrearSolicitud = ({ solicitudId: solicitudIdProp = null } = {}) => {
   }
 
   const collectMissingDocumentLabels = () => {
-    if (visibleDocumentGroups.length === 0 || modoCorreccion) return []
+    if (visibleDocumentGroups.length === 0) return []
     const missing = []
     for (const group of visibleDocumentGroups) {
       for (const doc of group.documents) {
         if (!isDocRequired(doc)) continue
-        const hasFile = documentosAdjuntos[doc.name]?.length > 0
-        if (!hasFile) {
+        const key = doc.name || doc.label
+        const nuevosAdjuntos = documentosAdjuntos[doc.name] || []
+        const teniaAdjuntoPrevio = documentosPreviosMap.get(key)
+        if (nuevosAdjuntos.length === 0 && !(modoCorreccion && teniaAdjuntoPrevio)) {
           missing.push(doc.label)
         }
       }
@@ -374,21 +377,18 @@ const CrearSolicitud = ({ solicitudId: solicitudIdProp = null } = {}) => {
     return missing
   }
 
-  const parseMontoDesdeLabel = (valor) => {
-    if (typeof valor !== 'string') return null
-    const digits = valor.replaceAll(/[^0-9.,]/g, '').replaceAll(',', '.')
-    if (!digits) return null
-    const monto = Number.parseFloat(digits)
-    return Number.isNaN(monto) ? null : monto
-  }
-
   const subirDocumentosPendientes = async (idSolicitudDestino) => {
     const uploads = []
 
-    for (const [tipoDocumento, files] of Object.entries(documentosAdjuntos)) {
-      if (!files) continue
-      for (const file of files) {
-        uploads.push(archivoAPI.subir(idSolicitudDestino, tipoDocumento, file))
+    for (const group of visibleDocumentGroups) {
+      for (const doc of group.documents) {
+        const files = documentosAdjuntos[doc.name]
+        if (!files?.length) continue
+        const tipoDocumento = doc.tipoDocumento || doc.name
+        if (!tipoDocumento) continue
+        for (const file of files) {
+          uploads.push(archivoAPI.subir(idSolicitudDestino, tipoDocumento, file))
+        }
       }
     }
 
@@ -402,6 +402,7 @@ const CrearSolicitud = ({ solicitudId: solicitudIdProp = null } = {}) => {
 
   const validateDatosYDocumentos = () => {
     if (!currentServiceConfig) return true
+
     const missingFields = [
       ...collectMissingFieldLabels(),
       ...collectMissingDocumentLabels()
@@ -607,6 +608,7 @@ const CrearSolicitud = ({ solicitudId: solicitudIdProp = null } = {}) => {
     )
   }
 
+
   const renderDocumentInput = (doc) => {
     const key = doc.name || doc.label
     const value = documentosAdjuntos[doc.name] || []
@@ -623,6 +625,12 @@ const CrearSolicitud = ({ solicitudId: solicitudIdProp = null } = {}) => {
           multiple={doc.multiple}
           onChange={(e) => handleDocumentChange(doc.name, e.target.files)}
         />
+        {(doc.descripcion || doc.tamanoMaxMb) && (
+          <p className="text-xs text-gray-500 mt-1">
+            {doc.descripcion}
+            {doc.tamanoMaxMb ? `${doc.descripcion ? ' · ' : ''}Máx ${doc.tamanoMaxMb}MB` : ''}
+          </p>
+        )}
         {value.length > 0 && (
           <p className="text-xs text-gray-600 mt-1">
             {value.map((file) => file.name).join(', ')}

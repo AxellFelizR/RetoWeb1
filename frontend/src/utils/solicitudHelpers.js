@@ -30,3 +30,17 @@ export const buildCamposResumen = (datosServicio, config) => {
     .filter(([, valor]) => hasReadableValue(valor))
     .map(([key, valor]) => ({ key, label: key, valor: formatValor(valor) }))
 }
+
+export const parseMontoDesdeLabel = (label) => {
+  if (!label) return 0
+  const raw = String(label)
+    .replace(/[^0-9.,-]/g, '')
+    .replace(/,(?=\d{3}(?:[,\.]|$))/g, '')
+    .replace(',', '.')
+
+  const monto = Number.parseFloat(raw)
+  if (Number.isNaN(monto) || !Number.isFinite(monto)) {
+    return 0
+  }
+  return Math.max(0, monto)
+}

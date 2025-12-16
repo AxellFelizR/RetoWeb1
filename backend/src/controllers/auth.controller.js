@@ -1,6 +1,7 @@
 import AuthService from '../services/auth.service.js';
 import EmpleadoService from '../services/empleado.service.js';
 import EmailService from '../services/email.service.js';
+import LogAccesoRepository from '../repositories/logAcceso.repository.js';
 import { ApiError } from '../utils/apiError.js';
 
 const renderHtmlResponse = ({ title, message, actionLabel, actionUrl }) => {
@@ -34,6 +35,31 @@ const renderHtmlResponse = ({ title, message, actionLabel, actionUrl }) => {
   </html>`;
 };
 
+const getRequestClientInfo = (req = {}) => {
+  const xForwarded = req.headers?.['x-forwarded-for'];
+  const ip = xForwarded?.split(',')?.[0]?.trim()
+    || req.ip
+    || req.connection?.remoteAddress
+    || req.socket?.remoteAddress
+    || null;
+
+  return {
+    ip,
+    userAgent: req.headers?.['user-agent'] || null
+  };
+};
+
+const registrarLogAccesoSafe = async (payload) => {
+  if (!payload?.tipo_acceso || payload?.tipo_usuario !== 'EMPLEADO') {
+    return;
+  }
+  try {
+    await LogAccesoRepository.registrar(payload);
+  } catch (error) {
+    console.warn('No se pudo registrar log de acceso:', error.message);
+  }
+};
+
 /**
  * Controlador de Autenticación
  */
@@ -44,18 +70,27 @@ export class AuthController {
   static async registroSolicitante(req, res, next) {
     try {
       const resultado = await AuthService.registroSolicitante(req.body);
+      let correoEnviado = false;
+      let correoOmitido = false;
+
       if (resultado?.confirmacion?.token) {
-        await EmailService.sendSolicitanteConfirmation({
+        const envio = await EmailService.sendSolicitanteConfirmation({
           to: resultado.solicitante.email,
           nombre: req.body?.nombre_completo,
           token: resultado.confirmacion.token
         });
+        correoEnviado = Boolean(envio?.success);
+        correoOmitido = Boolean(envio?.skipped);
         delete resultado.confirmacion.token;
       }
       res.status(201).json({
         success: true,
         message: 'Solicitante registrado exitosamente. Revisa tu correo para confirmar tu cuenta.',
-        data: resultado
+        data: {
+          ...resultado,
+          correoEnviado,
+          correoOmitido
+        }
       });
     } catch (error) {
       next(error);
@@ -66,8 +101,8 @@ export class AuthController {
    * POST /api/auth/login-solicitante
    */
   static async loginSolicitante(req, res, next) {
+    const { email, password } = req.body || {};
     try {
-      const { email, password } = req.body;
 
       if (!email || !password) {
         return res.status(400).json({
@@ -77,6 +112,7 @@ export class AuthController {
       }
 
       const resultado = await AuthService.loginSolicitante(email, password);
+
       res.json({
         success: true,
         message: 'Login exitoso',
@@ -91,8 +127,9 @@ export class AuthController {
    * POST /api/auth/login-empleado
    */
   static async loginEmpleado(req, res, next) {
+    const { email, password } = req.body || {};
+    const clientInfo = getRequestClientInfo(req);
     try {
-      const { email, password } = req.body;
 
       if (!email || !password) {
         return res.status(400).json({
@@ -102,12 +139,33 @@ export class AuthController {
       }
 
       const resultado = await AuthService.loginEmpleado(email, password);
+
+      await registrarLogAccesoSafe({
+        tipo_acceso: 'LOGIN',
+        tipo_usuario: 'EMPLEADO',
+        id_usuario: resultado?.empleado?.id_empleado,
+        email_usuario: resultado?.empleado?.email || email,
+        resultado: 'EXITOSO',
+        ip_origen: clientInfo.ip,
+        navegador_user_agent: clientInfo.userAgent
+      });
+
       res.json({
         success: true,
         message: 'Login exitoso',
         data: resultado
       });
     } catch (error) {
+      const motivo = String(error?.message || 'Error desconocido').slice(0, 500);
+      await registrarLogAccesoSafe({
+        tipo_acceso: 'LOGIN',
+        tipo_usuario: 'EMPLEADO',
+        email_usuario: email || null,
+        resultado: 'FALLIDO',
+        motivo_fallo: motivo,
+        ip_origen: clientInfo.ip,
+        navegador_user_agent: clientInfo.userAgent
+      });
       next(error);
     }
   }

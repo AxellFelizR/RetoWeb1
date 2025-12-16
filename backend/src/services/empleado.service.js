@@ -126,6 +126,14 @@ export class EmpleadoService {
 
       return { id_empleado: id, eliminado: true };
     } catch (error) {
+      const sqlErrorNumber = error?.number || error?.originalError?.info?.number;
+      if (sqlErrorNumber === 547) {
+        throw new ApiError(
+          'No se puede eliminar el empleado porque tiene referencias activas en solicitudes o historiales. ' +
+          'Reasigna los expedientes o ejecuta la migración de llaves foraneas antes de eliminar.',
+          409
+        );
+      }
       throw error;
     }
   }

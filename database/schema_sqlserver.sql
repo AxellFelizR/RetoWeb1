@@ -49,6 +49,16 @@ CREATE TABLE solicitante (
     CONSTRAINT ck_tipo_solicitante CHECK (tipo_solicitante IN ('PROFESIONAL', 'ESTABLECIMIENTO_PRIVADO', 'INSTITUCION_PUBLICA', 'IMPORTADORA'))
 );
 
+-- Tabla de registros pendientes de solicitante (para confirmar email antes de crear cuenta)
+CREATE TABLE solicitante_registro_pendiente (
+    id_registro INT IDENTITY(1,1) PRIMARY KEY,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    datos_payload NVARCHAR(MAX) NOT NULL,
+    token_confirmacion VARCHAR(128) NOT NULL UNIQUE,
+    expira DATETIME NOT NULL,
+    creado_en DATETIME DEFAULT GETDATE()
+);
+
 -- Tabla de PROFESIONAL (persona natural)
 CREATE TABLE profesional (
     id_profesional INT IDENTITY(1,1) PRIMARY KEY,
@@ -233,7 +243,7 @@ CREATE TABLE solicitud (
     FOREIGN KEY (id_solicitante) REFERENCES solicitante(id_solicitante) ON DELETE CASCADE,
     FOREIGN KEY (id_tipo_servicio) REFERENCES tipo_servicio(id_tipo_servicio),
     FOREIGN KEY (id_tipo_tramite) REFERENCES tipo_tramite(id_tipo_tramite),
-    FOREIGN KEY (id_empleado_asignado) REFERENCES empleado(id_empleado),
+    FOREIGN KEY (id_empleado_asignado) REFERENCES empleado(id_empleado) ON DELETE SET NULL,
     CONSTRAINT ck_estado_solicitud CHECK (estado_solicitud IN (
         'CREADA', 'REGISTRADA', 'EN_VENTANILLA', 'DEVUELTA_VENTANILLA', 'VALIDADA',
         'EN_REVISION_UPC', 'EN_ENCARGADO_UPC', 'EN_UPC', 'DEVUELTA_UPC', 'EN_DIRECCION', 'DEVUELTA_DIRECCION',
@@ -254,7 +264,7 @@ CREATE TABLE historial_estado_solicitud (
     motivo_cambio VARCHAR(MAX),
     comentario_adicional VARCHAR(MAX),
     FOREIGN KEY (id_solicitud) REFERENCES solicitud(id_solicitud) ON DELETE CASCADE,
-    FOREIGN KEY (id_empleado_cambio) REFERENCES empleado(id_empleado)
+    FOREIGN KEY (id_empleado_cambio) REFERENCES empleado(id_empleado) ON DELETE SET NULL
 );
 
 -- Tabla de REVISIÓN DE CAMPOS POR SOLICITUD
@@ -269,7 +279,7 @@ CREATE TABLE revision_campo_solicitud (
     id_empleado_revision INT,
     fecha_revision DATETIME DEFAULT GETDATE(),
     FOREIGN KEY (id_solicitud) REFERENCES solicitud(id_solicitud) ON DELETE CASCADE,
-    FOREIGN KEY (id_empleado_revision) REFERENCES empleado(id_empleado),
+    FOREIGN KEY (id_empleado_revision) REFERENCES empleado(id_empleado) ON DELETE SET NULL,
     CONSTRAINT ck_estado_campo_revision CHECK (estado_campo IN ('PENDIENTE', 'CUMPLE', 'OBSERVADO')),
     CONSTRAINT uq_revision_campo UNIQUE (id_solicitud, nombre_campo)
 );
@@ -309,7 +319,7 @@ CREATE TABLE archivo_adjunto (
     fecha_revision DATETIME,
     fecha_carga DATETIME DEFAULT GETDATE(),
     FOREIGN KEY (id_solicitud) REFERENCES solicitud(id_solicitud) ON DELETE CASCADE,
-    FOREIGN KEY (id_empleado_revision) REFERENCES empleado(id_empleado)
+    FOREIGN KEY (id_empleado_revision) REFERENCES empleado(id_empleado) ON DELETE SET NULL
 );
 
 -- ====================================================================================
@@ -332,7 +342,7 @@ CREATE TABLE pago (
     fecha_creacion DATETIME DEFAULT GETDATE(),
     fecha_confirmacion DATETIME,
     FOREIGN KEY (id_solicitud) REFERENCES solicitud(id_solicitud) ON DELETE CASCADE,
-    FOREIGN KEY (id_empleado_verificador) REFERENCES empleado(id_empleado),
+    FOREIGN KEY (id_empleado_verificador) REFERENCES empleado(id_empleado) ON DELETE SET NULL,
     CONSTRAINT ck_estado_pago CHECK (estado_pago IN ('PENDIENTE', 'CONFIRMADO', 'RECHAZADO', 'REEMBOLSO'))
 );
 
@@ -359,7 +369,7 @@ CREATE TABLE certificado_emitido (
     datos_certificado VARCHAR(MAX), -- JSON con datos del certificado
     observaciones VARCHAR(MAX),
     FOREIGN KEY (id_solicitud) REFERENCES solicitud(id_solicitud) ON DELETE CASCADE,
-    FOREIGN KEY (id_empleado_firma) REFERENCES empleado(id_empleado),
+    FOREIGN KEY (id_empleado_firma) REFERENCES empleado(id_empleado) ON DELETE SET NULL,
     CONSTRAINT ck_estado_certificado CHECK (estado_certificado IN ('ACTIVO', 'VENCIDO', 'REVOCADO', 'CANCELADO'))
 );
 
@@ -522,6 +532,24 @@ VALUES
     ('Permiso Importación Materia Prima', 'Permiso para importación de materia prima de sustancias controladas', 1, 1000.00, 30, 'ACTIVO'),
     ('Permiso Importación Medicamentos', 'Permiso para importación de medicamentos con sustancias controladas', 1, 1000.00, 30, 'ACTIVO'),
     ('Solicitud Renovación', 'Renovación de certificados o permisos vigentes', 1, 300.00, 10, 'ACTIVO');
+
+-- TIPOS DE TRÁMITE (catálogo base por tipo de servicio)
+INSERT INTO tipo_tramite (id_tipo_servicio, nombre_tramite, descripcion, requiere_costo, costo_tramite, campos_obligatorios)
+SELECT
+    ts.id_tipo_servicio,
+    tt.nombre_tramite,
+    CONCAT(tt.descripcion, ' - ', ts.nombre_servicio) AS descripcion,
+    tt.requiere_costo,
+    tt.costo_tramite,
+    NULL
+FROM tipo_servicio ts
+CROSS JOIN (
+    VALUES
+        ('Nueva solicitud', 'Registro inicial del servicio', 1, NULL),
+        ('Renovación', 'Renovación de un certificado vigente', 1, NULL),
+        ('Solicitud anterior negada', 'Reingreso luego de una negación previa', 0, NULL),
+        ('Certificado reprobado/suspendido', 'Emisión tras correcciones de un certificado detenido', 0, NULL)
+) AS tt(nombre_tramite, descripcion, requiere_costo, costo_tramite);
 
 -- Ejemplo de sustancias controladas
 INSERT INTO sustancia_controlada (id_categoria, nombre_cientifico, nombre_comercial, codigo_sustancia, formula_quimica, peso_molecular, nivel_restriccion, requiere_licencia_importacion, requiere_licencia_uso, estado_sustancia)
@@ -1002,14 +1030,26 @@ BEGIN
     SET NOCOUNT ON;
 
     SELECT
-        id_certificado,
-        id_solicitud,
-        num_resolucion,
-        fecha_emision,
-        estado
-    FROM certificado
-    WHERE id_solicitud = @id_solicitud
-    ORDER BY fecha_emision DESC;
+        c.id_certificado,
+        c.id_solicitud,
+        c.numero_certificado,
+        ISNULL(c.num_resolucion, c.numero_certificado) AS num_resolucion,
+        c.tipo_certificado,
+        c.fecha_emision,
+        c.fecha_vencimiento,
+        c.estado_certificado,
+        c.estado_certificado AS estado,
+        c.ruta_pdf,
+        c.ruta_pdf_firmado,
+        c.hash_pdf,
+        c.firma_digital_certificado,
+        c.id_empleado_firma,
+        c.fecha_firma,
+        c.datos_certificado,
+        c.observaciones
+    FROM certificado_emitido c
+    WHERE c.id_solicitud = @id_solicitud
+    ORDER BY c.fecha_emision DESC;
 END;
 GO
 
@@ -1020,7 +1060,8 @@ GO
 CREATE PROCEDURE dbo.sp_certificado_listar
     @estado VARCHAR(20) = NULL,
     @fechaDesde DATETIME = NULL,
-    @fechaHasta DATETIME = NULL
+    @fechaHasta DATETIME = NULL,
+    @tipo_certificado VARCHAR(50) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -1028,16 +1069,24 @@ BEGIN
     SELECT
         c.id_certificado,
         c.id_solicitud,
-        c.num_resolucion,
+        c.numero_certificado,
+        ISNULL(c.num_resolucion, c.numero_certificado) AS num_resolucion,
+        c.tipo_certificado,
         c.fecha_emision,
-        c.estado,
-        s.numero_solicitud
-    FROM certificado c
+        c.fecha_vencimiento,
+        c.estado_certificado,
+        c.estado_certificado AS estado,
+        s.numero_expediente,
+        s.numero_solicitud,
+        s.id_solicitante,
+        s.estado_solicitud
+    FROM certificado_emitido c
     JOIN solicitud s ON s.id_solicitud = c.id_solicitud
-    WHERE (@estado IS NULL OR c.estado = @estado)
+    WHERE (@estado IS NULL OR c.estado_certificado = @estado)
+      AND (@tipo_certificado IS NULL OR c.tipo_certificado = @tipo_certificado)
       AND (@fechaDesde IS NULL OR c.fecha_emision >= @fechaDesde)
       AND (@fechaHasta IS NULL OR c.fecha_emision <= @fechaHasta)
-    ORDER BY c.fecha_emision DESC;
+    ORDER BY c.fecha_emision DESC, c.id_certificado DESC;
 END;
 GO
 
@@ -2193,6 +2242,73 @@ BEGIN
 END;
 GO
 
+IF OBJECT_ID('dbo.sp_registro_solicitante_crear', 'P') IS NOT NULL
+    DROP PROCEDURE dbo.sp_registro_solicitante_crear;
+GO
+CREATE PROCEDURE dbo.sp_registro_solicitante_crear
+    @email VARCHAR(255),
+    @datos_payload NVARCHAR(MAX),
+    @token_confirmacion VARCHAR(128),
+    @expira DATETIME
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    INSERT INTO solicitante_registro_pendiente (email, datos_payload, token_confirmacion, expira)
+    OUTPUT INSERTED.id_registro,
+           INSERTED.email,
+           INSERTED.datos_payload,
+           INSERTED.token_confirmacion,
+           INSERTED.expira,
+           INSERTED.creado_en
+    VALUES (@email, @datos_payload, @token_confirmacion, @expira);
+END;
+GO
+
+IF OBJECT_ID('dbo.sp_registro_solicitante_obtener_por_token', 'P') IS NOT NULL
+    DROP PROCEDURE dbo.sp_registro_solicitante_obtener_por_token;
+GO
+CREATE PROCEDURE dbo.sp_registro_solicitante_obtener_por_token
+    @token_confirmacion VARCHAR(128)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT TOP 1 *
+    FROM solicitante_registro_pendiente
+    WHERE token_confirmacion = @token_confirmacion;
+END;
+GO
+
+IF OBJECT_ID('dbo.sp_registro_solicitante_obtener_por_email', 'P') IS NOT NULL
+    DROP PROCEDURE dbo.sp_registro_solicitante_obtener_por_email;
+GO
+CREATE PROCEDURE dbo.sp_registro_solicitante_obtener_por_email
+    @email VARCHAR(255)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT TOP 1 *
+    FROM solicitante_registro_pendiente
+    WHERE email = @email;
+END;
+GO
+
+IF OBJECT_ID('dbo.sp_registro_solicitante_eliminar', 'P') IS NOT NULL
+    DROP PROCEDURE dbo.sp_registro_solicitante_eliminar;
+GO
+CREATE PROCEDURE dbo.sp_registro_solicitante_eliminar
+    @id_registro INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM solicitante_registro_pendiente WHERE id_registro = @id_registro;
+    SELECT @@ROWCOUNT AS filas_afectadas;
+END;
+GO
+
 IF OBJECT_ID('dbo.sp_estado_solicitud_obtener_por_nombre', 'P') IS NOT NULL
     DROP PROCEDURE dbo.sp_estado_solicitud_obtener_por_nombre;
 GO
@@ -2328,6 +2444,51 @@ BEGIN
     );
 
     SELECT CAST(SCOPE_IDENTITY() AS INT) AS id_auditoria;
+END;
+GO
+
+IF OBJECT_ID('dbo.sp_log_acceso_registrar', 'P') IS NOT NULL
+    DROP PROCEDURE dbo.sp_log_acceso_registrar;
+GO
+CREATE PROCEDURE dbo.sp_log_acceso_registrar
+    @tipo_acceso VARCHAR(50),
+    @tipo_usuario VARCHAR(20),
+    @id_usuario INT = NULL,
+    @email_usuario VARCHAR(255) = NULL,
+    @resultado VARCHAR(20) = 'EXITOSO',
+    @motivo_fallo VARCHAR(500) = NULL,
+    @ip_origen VARCHAR(45) = NULL,
+    @navegador_user_agent VARCHAR(500) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF UPPER(ISNULL(@tipo_usuario, '')) <> 'EMPLEADO'
+    BEGIN
+        THROW 70010, 'log_acceso_sistema es exclusivo para usuarios empleados.', 1;
+    END;
+
+    INSERT INTO log_acceso_sistema (
+        id_usuario,
+        tipo_usuario,
+        email_usuario,
+        tipo_acceso,
+        resultado,
+        motivo_fallo,
+        ip_origen,
+        navegador_user_agent
+    ) VALUES (
+        @id_usuario,
+        @tipo_usuario,
+        @email_usuario,
+        @tipo_acceso,
+        UPPER(@resultado),
+        @motivo_fallo,
+        @ip_origen,
+        @navegador_user_agent
+    );
+
+    SELECT CAST(SCOPE_IDENTITY() AS INT) AS id_log;
 END;
 GO
 
@@ -2563,56 +2724,97 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
+    IF @take <= 0 SET @take = 20;
+    IF @skip < 0 SET @skip = 0;
+
+    WITH solicitudes_filtradas AS (
+        SELECT 
+            s.id_solicitud,
+            s.id_solicitante,
+            s.id_tipo_servicio,
+            s.id_tipo_tramite,
+            s.numero_solicitud,
+            s.numero_expediente,
+            s.estado_solicitud AS estado_actual,
+            s.prioridad,
+            CONVERT(VARCHAR(30), s.fecha_creacion, 121) AS fecha_creacion,
+            CONVERT(VARCHAR(30), s.fecha_actualizacion, 121) AS fecha_actualizacion,
+            CONVERT(VARCHAR(10), s.fecha_vencimiento, 121) AS fecha_vencimiento,
+            CONVERT(VARCHAR(10), s.fecha_creacion, 121) AS fecha_solicitud,
+            ts.nombre_servicio,
+            tt.nombre_tramite,
+            s.comentario_general,
+            s.id_empleado_asignado,
+            s.numero_cidc_anterior,
+            s.motivo_detalle,
+            s.resumen_pago_label,
+            s.monto_total_reportado,
+            s.datos_servicio_json,
+            s.documentos_reportados_json,
+            sol.email AS email_solicitante,
+            sol.telefono AS telefono_solicitante,
+            sol.tipo_solicitante,
+            COALESCE(prof.nombre_completo, est.razon_social) AS nombre_solicitante,
+            COALESCE(prof.cedula_identidad, est.rnc) AS identificador_solicitante,
+            COALESCE(prof.telefono_celular, est.telefono_empresa, sol.telefono) AS telefono_contacto,
+            ultimo.estado_nuevo AS ultimo_estado,
+            ultimo.fecha_cambio AS ultimo_cambio_fecha,
+            ultimo.empleado_nombre AS ultimo_cambio_por,
+            ROW_NUMBER() OVER (ORDER BY s.fecha_creacion DESC, s.id_solicitud DESC) AS rn
+        FROM solicitud s
+        LEFT JOIN tipo_servicio ts ON s.id_tipo_servicio = ts.id_tipo_servicio
+        LEFT JOIN tipo_tramite tt ON s.id_tipo_tramite = tt.id_tipo_tramite
+        LEFT JOIN solicitante sol ON s.id_solicitante = sol.id_solicitante
+        LEFT JOIN profesional prof ON prof.id_solicitante = sol.id_solicitante
+        LEFT JOIN establecimiento est ON est.id_solicitante = sol.id_solicitante
+        OUTER APPLY (
+            SELECT TOP 1 
+                h.estado_nuevo,
+                CONVERT(VARCHAR(30), h.fecha_cambio, 121) AS fecha_cambio,
+                e.nombre_completo AS empleado_nombre
+            FROM historial_estado_solicitud h
+            LEFT JOIN empleado e ON h.id_empleado_cambio = e.id_empleado
+            WHERE h.id_solicitud = s.id_solicitud
+            ORDER BY h.fecha_cambio DESC
+        ) ultimo
+        WHERE (@estado IS NULL OR s.estado_solicitud = @estado)
+          AND (@id_solicitante IS NULL OR s.id_solicitante = @id_solicitante)
+    )
     SELECT 
-        s.id_solicitud,
-        s.id_solicitante,
-        s.id_tipo_servicio,
-        s.id_tipo_tramite,
-        s.numero_expediente AS numero_solicitud,
-        s.estado_solicitud AS estado_actual,
-        s.prioridad,
-        CONVERT(VARCHAR(30), s.fecha_creacion, 121) AS fecha_creacion,
-        CONVERT(VARCHAR(30), s.fecha_actualizacion, 121) AS fecha_actualizacion,
-        CONVERT(VARCHAR(10), s.fecha_vencimiento, 121) AS fecha_vencimiento,
-        CONVERT(VARCHAR(10), s.fecha_creacion, 121) AS fecha_solicitud,
-        ts.nombre_servicio,
-        tt.nombre_tramite,
-        s.comentario_general,
-        s.id_empleado_asignado,
-        s.numero_cidc_anterior,
-        s.motivo_detalle,
-        s.resumen_pago_label,
-        s.monto_total_reportado,
-        s.datos_servicio_json,
-        s.documentos_reportados_json,
-        sol.email AS email_solicitante,
-        sol.telefono AS telefono_solicitante,
-        sol.tipo_solicitante,
-        COALESCE(prof.nombre_completo, est.razon_social) AS nombre_solicitante,
-        COALESCE(prof.cedula_identidad, est.rnc) AS identificador_solicitante,
-        COALESCE(prof.telefono_celular, est.telefono_empresa, sol.telefono) AS telefono_contacto,
-        ultimo.estado_nuevo AS ultimo_estado,
-        ultimo.fecha_cambio AS ultimo_cambio_fecha,
-        ultimo.empleado_nombre AS ultimo_cambio_por
-    FROM solicitud s
-    LEFT JOIN tipo_servicio ts ON s.id_tipo_servicio = ts.id_tipo_servicio
-    LEFT JOIN tipo_tramite tt ON s.id_tipo_tramite = tt.id_tipo_tramite
-    LEFT JOIN solicitante sol ON s.id_solicitante = sol.id_solicitante
-    LEFT JOIN profesional prof ON prof.id_solicitante = sol.id_solicitante
-    LEFT JOIN establecimiento est ON est.id_solicitante = sol.id_solicitante
-    OUTER APPLY (
-        SELECT TOP 1 
-            h.estado_nuevo,
-            CONVERT(VARCHAR(30), h.fecha_cambio, 121) AS fecha_cambio,
-            e.nombre_completo AS empleado_nombre
-        FROM historial_estado_solicitud h
-        LEFT JOIN empleado e ON h.id_empleado_cambio = e.id_empleado
-        WHERE h.id_solicitud = s.id_solicitud
-        ORDER BY h.fecha_cambio DESC
-    ) ultimo
-    WHERE (@estado IS NULL OR s.estado_solicitud = @estado)
-        AND (@id_solicitante IS NULL OR s.id_solicitante = @id_solicitante)
-    DELETE FROM solicitud WHERE id_solicitud = @id_solicitud;
+        id_solicitud,
+        id_solicitante,
+        id_tipo_servicio,
+        id_tipo_tramite,
+        numero_solicitud,
+        numero_expediente,
+        estado_actual,
+        prioridad,
+        fecha_creacion,
+        fecha_actualizacion,
+        fecha_vencimiento,
+        fecha_solicitud,
+        nombre_servicio,
+        nombre_tramite,
+        comentario_general,
+        id_empleado_asignado,
+        numero_cidc_anterior,
+        motivo_detalle,
+        resumen_pago_label,
+        monto_total_reportado,
+        datos_servicio_json,
+        documentos_reportados_json,
+        email_solicitante,
+        telefono_solicitante,
+        tipo_solicitante,
+        nombre_solicitante,
+        identificador_solicitante,
+        telefono_contacto,
+        ultimo_estado,
+        ultimo_cambio_fecha,
+        ultimo_cambio_por
+    FROM solicitudes_filtradas
+    WHERE rn > @skip AND rn <= (@skip + @take)
+    ORDER BY rn;
 END;
 GO
 

@@ -42,7 +42,6 @@ const AdminPanel = () => {
   const [nuevoEmpleado, setNuevoEmpleado] = useState({
     nombre_completo: '',
     email: '',
-    password: '',
     cedula: '',
     departamento: '',
     rol: 'VENTANILLA'
@@ -182,22 +181,17 @@ const AdminPanel = () => {
 
   const handleCrearEmpleado = async (e) => {
     e.preventDefault()
-    if (nuevoEmpleado.password.length < 8) {
-      toast.error('La contraseña debe tener al menos 8 caracteres')
-      return
-    }
     try {
       setCreandoEmpleado(true)
       await empleadoAPI.crear({
         nombre_completo: nuevoEmpleado.nombre_completo,
         email: nuevoEmpleado.email,
-        password: nuevoEmpleado.password,
         cedula_identidad: nuevoEmpleado.cedula,
         departamento: nuevoEmpleado.departamento,
         rol: nuevoEmpleado.rol
       })
       toast.success('Cuenta creada exitosamente')
-      setNuevoEmpleado({ nombre_completo: '', email: '', password: '', cedula: '', departamento: '', rol: 'VENTANILLA' })
+      setNuevoEmpleado({ nombre_completo: '', email: '', cedula: '', departamento: '', rol: 'VENTANILLA' })
       fetchEmpleados()
     } catch (error) {
       toast.error(error?.message || 'No se pudo crear la cuenta')
@@ -479,17 +473,6 @@ const AdminPanel = () => {
               ))}
             </select>
           </div>
-          <div>
-            <label className="form-label" htmlFor="passwordTemporal">Contraseña temporal</label>
-            <input
-              id="passwordTemporal"
-              type="password"
-              className="input-field"
-              value={nuevoEmpleado.password}
-              onChange={(e) => handleNuevoEmpleadoChange('password', e.target.value)}
-              required
-            />
-          </div>
           <div className="md:col-span-2 flex justify-end">
             <button
               type="submit"
@@ -745,9 +728,6 @@ const AdminPanel = () => {
                       >
                         <FiEye /> Ver
                       </Link>
-                      <span className="text-xs text-gray-400 text-center">
-                        Eliminación deshabilitada
-                      </span>
                     </div>
                   </td>
                 </tr>

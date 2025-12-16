@@ -10,6 +10,7 @@ const STORED_PROCEDURES = Object.freeze({
   GUARDAR_TOKEN_CONFIRMACION: 'sp_solicitante_guardar_token_confirmacion',
   OBTENER_POR_TOKEN_CONFIRMACION: 'sp_solicitante_obtener_por_token_confirmacion',
   CONFIRMAR_EMAIL: 'sp_solicitante_confirmar_email',
+  ELIMINAR_NO_CONFIRMADO: 'sp_solicitante_eliminar_si_no_confirmado',
   GUARDAR_TOKEN_RESET: 'sp_solicitante_guardar_token_reset',
   OBTENER_POR_TOKEN_RESET: 'sp_solicitante_obtener_por_token_reset',
   ACTUALIZAR_PASSWORD: 'sp_solicitante_actualizar_password',
@@ -190,6 +191,24 @@ export class SolicitanteRepository {
         .execute(STORED_PROCEDURES.CONFIRMAR_EMAIL);
     } catch (error) {
       console.error('Error confirmando email:', error);
+      throw error;
+    }
+  }
+
+  static async eliminarSiNoConfirmado(idSolicitante) {
+    this.ensurePool();
+    if (!idSolicitante) {
+      return false;
+    }
+    try {
+      const result = await db.pool.request()
+        .input('id_solicitante', sql.Int, Number.parseInt(idSolicitante, 10))
+        .execute(STORED_PROCEDURES.ELIMINAR_NO_CONFIRMADO);
+
+      const filas = result.recordset?.[0]?.filas_afectadas ?? 0;
+      return filas > 0;
+    } catch (error) {
+      console.error('Error eliminando solicitante no confirmado:', error);
       throw error;
     }
   }

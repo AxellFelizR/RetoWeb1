@@ -27,9 +27,21 @@ export class AuthService {
       }
 
       // Verificar si email ya existe
-      const emailExiste = await SolicitanteRepository.existeEmail(email);
-      if (emailExiste) {
-        throw new ApiError('Este email ya está registrado', 409);
+      const solicitanteExistente = await SolicitanteRepository.obtenerPorEmail(email);
+      if (solicitanteExistente) {
+        if (solicitanteExistente.email_confirmado) {
+          throw new ApiError('Este email ya está registrado', 409);
+        }
+
+        const tokenExpira = solicitanteExistente.token_confirmacion_expira;
+        const token = solicitanteExistente.token_confirmacion;
+        const tokenVencido = !token || (tokenExpira && tokenExpira < new Date());
+
+        if (tokenVencido) {
+          await SolicitanteRepository.eliminarSiNoConfirmado(solicitanteExistente.id_solicitante);
+        } else {
+          throw new ApiError('Ya existe un registro pendiente por confirmar para este email', 409);
+        }
       }
 
       // Hashear contraseña
@@ -260,7 +272,8 @@ export class AuthService {
     }
 
     if (solicitante.token_confirmacion_expira && solicitante.token_confirmacion_expira < new Date()) {
-      throw new ApiError('El token de confirmación ha expirado', 410);
+      await SolicitanteRepository.eliminarSiNoConfirmado(solicitante.id_solicitante);
+      throw new ApiError('El token de confirmación ha expirado. Debes registrarte nuevamente.', 410);
     }
 
     await SolicitanteRepository.confirmarEmail(solicitante.id_solicitante);

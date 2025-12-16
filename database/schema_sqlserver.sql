@@ -2242,6 +2242,23 @@ BEGIN
 END;
 GO
 
+IF OBJECT_ID('dbo.sp_solicitante_eliminar_si_no_confirmado', 'P') IS NOT NULL
+    DROP PROCEDURE dbo.sp_solicitante_eliminar_si_no_confirmado;
+GO
+CREATE PROCEDURE dbo.sp_solicitante_eliminar_si_no_confirmado
+    @id_solicitante INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM solicitante
+    WHERE id_solicitante = @id_solicitante
+      AND email_confirmado = 0;
+
+    SELECT @@ROWCOUNT AS filas_afectadas;
+END;
+GO
+
 IF OBJECT_ID('dbo.sp_registro_solicitante_crear', 'P') IS NOT NULL
     DROP PROCEDURE dbo.sp_registro_solicitante_crear;
 GO

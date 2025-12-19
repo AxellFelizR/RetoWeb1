@@ -10,6 +10,12 @@ import {
   TIPOS_TRAMITE
 } from '../../constants/solicitudOptions'
 import { parseMontoDesdeLabel } from '../../utils/solicitudHelpers'
+import {
+  keepDecimalNumber,
+  keepDigitsOnly,
+  preventNonDecimalKey,
+  preventNonDigitKey
+} from '../../utils/numericInput'
 
 const iterateServiceFields = (serviceConfig, callback) => {
   if (!serviceConfig?.sections) return
@@ -19,6 +25,46 @@ const iterateServiceFields = (serviceConfig, callback) => {
       callback(field)
     }
   }
+}
+
+const NUMERIC_FIELD_PATTERNS = ['telefono', 'telefonos', 'celular', 'cedula', 'rnc', 'colegiatura']
+const NUMERIC_FIELD_EXCEPTIONS = new Set()
+
+const resolveNumericStrategy = (field) => {
+  if (!field?.name) return null
+  if (field.numericStrategy) return field.numericStrategy
+  if (field.allowDecimal) return 'decimal'
+  if (field.numericOnly === true) return 'digits'
+  if (field.numericOnly === false) return null
+  const normalized = field.name.toLowerCase()
+  if (NUMERIC_FIELD_EXCEPTIONS.has(field.name)) return null
+  if (NUMERIC_FIELD_PATTERNS.some((pattern) => normalized.includes(pattern))) {
+    return 'digits'
+  }
+  return null
+}
+
+const sanitizeValueByStrategy = (strategy, value) => {
+  if (strategy === 'digits') return keepDigitsOnly(value)
+  if (strategy === 'decimal') return keepDecimalNumber(value)
+  return value
+}
+
+const getNumericInputAttributes = (strategy) => {
+  if (strategy === 'digits') {
+    return {
+      inputMode: 'numeric',
+      pattern: '[0-9]*',
+      onKeyDown: preventNonDigitKey
+    }
+  }
+  if (strategy === 'decimal') {
+    return {
+      inputMode: 'decimal',
+      onKeyDown: preventNonDecimalKey
+    }
+  }
+  return {}
 }
 
 const CrearSolicitud = ({ solicitudId: solicitudIdProp = null } = {}) => {
@@ -526,29 +572,35 @@ const CrearSolicitud = ({ solicitudId: solicitudIdProp = null } = {}) => {
   const renderField = (field) => {
     if (!shouldShowField(field)) return null
     const isReadOnly = field.readOnly && (!field.prefill || Boolean(userDefaults[field.prefill]))
+    const numericStrategy = resolveNumericStrategy(field)
+    const handleValueChange = (eventValue) => {
+      updateDato(field.name, sanitizeValueByStrategy(numericStrategy, eventValue))
+    }
     const commonProps = {
       id: field.name,
       name: field.name,
       value: datosServicio[field.name] || '',
-      onChange: (e) => updateDato(field.name, e.target.value),
+      onChange: (e) => handleValueChange(e.target.value),
       className: 'input-field',
       required: field.required,
       readOnly: isReadOnly
     }
 
     if (field.type === 'textarea') {
+      const labelClass = field.required ? 'form-label required' : 'form-label'
       return (
         <div key={field.name} className="form-group">
-          <label className="form-label" htmlFor={field.name}>{field.label}</label>
+          <label className={labelClass} htmlFor={field.name}>{field.label}</label>
           <textarea {...commonProps} rows={field.rows || 3} />
         </div>
       )
     }
 
     if (field.type === 'select') {
+      const labelClass = field.required ? 'form-label required' : 'form-label'
       return (
         <div key={field.name} className="form-group">
-          <label className="form-label" htmlFor={field.name}>{field.label}</label>
+          <label className={labelClass} htmlFor={field.name}>{field.label}</label>
           <select
             {...commonProps}
             value={datosServicio[field.name] || ''}
@@ -569,9 +621,10 @@ const CrearSolicitud = ({ solicitudId: solicitudIdProp = null } = {}) => {
       const selected = Array.isArray(datosServicio[field.name])
         ? datosServicio[field.name]
         : []
+      const labelClass = field.required ? 'form-label required' : 'form-label'
       return (
         <div key={field.name} className="form-group">
-          <label className="form-label">{field.label}</label>
+          <label className={labelClass}>{field.label}</label>
           <div className="flex flex-wrap gap-3">
             {field.options?.map((option) => (
               <label key={option.value} className="inline-flex items-center gap-2">
@@ -597,11 +650,14 @@ const CrearSolicitud = ({ solicitudId: solicitudIdProp = null } = {}) => {
       return 'text'
     }
 
+    const labelClass = field.required ? 'form-label required' : 'form-label'
+    const numericInputProps = getNumericInputAttributes(numericStrategy)
     return (
       <div key={field.name} className="form-group">
-        <label className="form-label" htmlFor={field.name}>{field.label}</label>
+        <label className={labelClass} htmlFor={field.name}>{field.label}</label>
         <input
           {...commonProps}
+          {...numericInputProps}
           type={resolveInputType()}
         />
       </div>
@@ -613,10 +669,11 @@ const CrearSolicitud = ({ solicitudId: solicitudIdProp = null } = {}) => {
     const key = doc.name || doc.label
     const value = documentosAdjuntos[doc.name] || []
     const teniaAdjuntoPrevio = documentosPreviosMap.get(key)
+    const labelClass = isDocRequired(doc) ? 'form-label required' : 'form-label'
     return (
       <div key={doc.name} className="form-group">
-        <label className="form-label" htmlFor={doc.name}>
-          {doc.label} {isDocRequired(doc) ? <span className="text-red-500">*</span> : null}
+        <label className={labelClass} htmlFor={doc.name}>
+          {doc.label}
         </label>
         <input
           id={doc.name}

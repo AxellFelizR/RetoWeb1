@@ -8,9 +8,9 @@ export const SERVICIO_FORM_CONFIG = {
       {
         title: 'Datos del profesional',
         fields: [
+          { name: 'cedula_profesional', label: 'Cedula de identidad y electoral', type: 'text', required: true, readOnly: true, prefill: 'cedula' },
           { name: 'nombre_profesional', label: 'Nombre del profesional', type: 'text', required: true, prefill: 'nombre' },
           { name: 'direccion_postal', label: 'Direccion / correo postal', type: 'textarea', required: true },
-          { name: 'cedula_profesional', label: 'Cedula de identidad y electoral', type: 'text', required: true, readOnly: true, prefill: 'cedula' },
           { name: 'exequatur', label: 'Exequatur del profesional', type: 'text', required: true },
           { name: 'numero_colegiatura', label: 'Numero de colegiatura (si aplica)', type: 'text' },
           { name: 'telefono_residencial', label: 'Telefono residencial', type: 'tel' },

@@ -2,10 +2,14 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { authAPI } from '../../services/api'
 import toast from 'react-hot-toast'
+import { keepDigitsOnly, preventNonDigitKey } from '../../utils/numericInput'
+
+const DEFAULT_TIPO_SOLICITANTE = 'PROFESIONAL'
+const NUMERIC_ONLY_FIELDS = new Set(['cedula_identidad', 'telefono'])
 
 const RegistroSolicitante = () => {
   const [formData, setFormData] = useState({
-    tipo_solicitante: 'PROFESIONAL',
+    tipo_solicitante: DEFAULT_TIPO_SOLICITANTE,
     email: '',
     password: '',
     confirmPassword: '',
@@ -15,24 +19,34 @@ const RegistroSolicitante = () => {
     profesion: 'MEDICINA'
   })
   const [loading, setLoading] = useState(false)
+  const [feedbackMessage, setFeedbackMessage] = useState('')
   const navigate = useNavigate()
 
   const handleChange = (e) => {
     const { name, value } = e.target
+    const sanitizedValue = NUMERIC_ONLY_FIELDS.has(name) ? keepDigitsOnly(value) : value
     setFormData((prev) => ({
       ...prev,
-      [name]: value
+      [name]: sanitizedValue
     }))
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
+    setFeedbackMessage('')
 
     try {
-      const response = await authAPI.registroSolicitante(formData)
+      const payload = {
+        ...formData,
+        tipo_solicitante: DEFAULT_TIPO_SOLICITANTE
+      }
+
+      const response = await authAPI.registroSolicitante(payload)
       const correoEnviado = response?.data?.correoEnviado
       const correoOmitido = response?.data?.correoOmitido
+
+      setFeedbackMessage('Te enviamos un correo para completar el registro. Si no lo ves, revisa tu carpeta de spam.')
 
       if (correoEnviado) {
         toast.success('Revisa tu correo para confirmar la cuenta')
@@ -64,28 +78,17 @@ const RegistroSolicitante = () => {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Tipo de solicitante */}
-            <div className="form-group">
-              <label htmlFor="tipo_solicitante" className="form-label">
-                Tipo de Solicitante
-              </label>
-              <select
-                id="tipo_solicitante"
-                name="tipo_solicitante"
-                className="input-field"
-                value={formData.tipo_solicitante}
-                onChange={handleChange}
-              >
-                <option value="PROFESIONAL">Profesional de la Salud</option>
-                <option value="ESTABLECIMIENTO_PRIVADO">Establecimiento Privado</option>
-                <option value="INSTITUCION_PUBLICA">Institución Pública</option>
-                <option value="IMPORTADORA">Empresa Importadora</option>
-              </select>
+            {/* Tipo de solicitante (informativo) */}
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <p className="text-sm text-gray-600">Tipo de solicitante</p>
+              <p className="text-lg font-semibold text-primary-950">
+                Externo (gestionado por la administración)
+              </p>
             </div>
 
             {/* Cédula */}
             <div className="form-group">
-              <label htmlFor="cedula_identidad" className="form-label">
+              <label htmlFor="cedula_identidad" className="form-label required">
                 Cédula de Identidad
               </label>
               <input
@@ -95,6 +98,9 @@ const RegistroSolicitante = () => {
                 className="input-field"
                 value={formData.cedula_identidad}
                 onChange={handleChange}
+                inputMode="numeric"
+                pattern="[0-9]*"
+                onKeyDown={preventNonDigitKey}
                 required
                 placeholder="000-0000000-0"
               />
@@ -102,7 +108,7 @@ const RegistroSolicitante = () => {
 
             {/* Nombre completo */}
             <div className="form-group">
-              <label htmlFor="nombre_completo" className="form-label">
+              <label htmlFor="nombre_completo" className="form-label required">
                 Nombre Completo
               </label>
               <input
@@ -118,7 +124,7 @@ const RegistroSolicitante = () => {
 
             {/* Email */}
             <div className="form-group">
-              <label htmlFor="email" className="form-label">
+              <label htmlFor="email" className="form-label required">
                 Email
               </label>
               <input
@@ -144,13 +150,16 @@ const RegistroSolicitante = () => {
                 className="input-field"
                 value={formData.telefono}
                 onChange={handleChange}
+                inputMode="numeric"
+                pattern="[0-9]*"
+                onKeyDown={preventNonDigitKey}
               />
             </div>
 
             {/* Profesión (si aplica) */}
             {formData.tipo_solicitante === 'PROFESIONAL' && (
               <div className="form-group">
-                <label htmlFor="profesion" className="form-label">
+                <label htmlFor="profesion" className="form-label required">
                   Profesión
                 </label>
                 <select
@@ -159,6 +168,7 @@ const RegistroSolicitante = () => {
                   className="input-field"
                   value={formData.profesion}
                   onChange={handleChange}
+                  required
                 >
                   <option value="MEDICINA">Medicina</option>
                   <option value="MEDICINA_VETERINARIA">Medicina Veterinaria</option>
@@ -171,7 +181,7 @@ const RegistroSolicitante = () => {
             {/* Contraseña */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="form-group">
-                <label htmlFor="password" className="form-label">
+                <label htmlFor="password" className="form-label required">
                   Contraseña
                 </label>
                 <input
@@ -187,7 +197,7 @@ const RegistroSolicitante = () => {
               </div>
 
               <div className="form-group">
-                <label htmlFor="confirmPassword" className="form-label">
+                <label htmlFor="confirmPassword" className="form-label required">
                   Confirmar Contraseña
                 </label>
                 <input
@@ -210,6 +220,12 @@ const RegistroSolicitante = () => {
             >
               {loading ? 'Registrando...' : 'Registrarse'}
             </button>
+
+            {feedbackMessage && (
+              <p className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                {feedbackMessage}
+              </p>
+            )}
           </form>
 
           {/* Enlace a login */}

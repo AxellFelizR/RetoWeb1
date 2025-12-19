@@ -1244,7 +1244,7 @@ const DetalleRevision = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-600 mb-1" htmlFor="motivoDevolucion">Motivo de devolución</label>
+                  <label className="block text-sm text-gray-600 mb-1 required-label" htmlFor="motivoDevolucion">Motivo de devolución</label>
                   <textarea
                     id="motivoDevolucion"
                     className="textarea"
@@ -1291,7 +1291,7 @@ const DetalleRevision = () => {
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-600 mb-1" htmlFor="rechazoTecnico">Recomendación de rechazo (opcional)</label>
+                <label className="block text-sm text-gray-600 mb-1 required-label" htmlFor="rechazoTecnico">Recomendación de rechazo</label>
                 <textarea
                   id="rechazoTecnico"
                   className="textarea"
@@ -1299,6 +1299,7 @@ const DetalleRevision = () => {
                   value={motivoRechazoTecnico}
                   onChange={(e) => setMotivoRechazoTecnico(e.target.value)}
                 />
+                <p className="text-xs text-gray-500 mt-1">Obligatorio solo si recomiendas denegar.</p>
               </div>
               <div className="grid grid-cols-1 gap-3">
                 <button
@@ -1336,7 +1337,7 @@ const DetalleRevision = () => {
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-600 mb-1" htmlFor="motivoDenegaEncargado">Motivo de denegación</label>
+                <label className="block text-sm text-gray-600 mb-1 required-label" htmlFor="motivoDenegaEncargado">Motivo de denegación</label>
                 <textarea
                   id="motivoDenegaEncargado"
                   className="textarea"
@@ -1382,7 +1383,7 @@ const DetalleRevision = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-600 mb-1" htmlFor="motivoDireccionRechazo">Motivo de denegación</label>
+                  <label className="block text-sm text-gray-600 mb-1 required-label" htmlFor="motivoDireccionRechazo">Motivo de denegación</label>
                   <textarea
                     id="motivoDireccionRechazo"
                     className="textarea"

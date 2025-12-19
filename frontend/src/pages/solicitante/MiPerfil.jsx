@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react'
 import { useAuthStore } from '../../store/authStore'
 import toast from 'react-hot-toast'
 import axios from 'axios'
+import { keepDigitsOnly, preventNonDigitKey } from '../../utils/numericInput'
+
+const NUMERIC_PROFILE_FIELDS = new Set(['telefono', 'cedula'])
 
 export default function MiPerfil() {
   const { user } = useAuthStore()
@@ -28,9 +31,10 @@ export default function MiPerfil() {
 
   const handleChange = (e) => {
     const { name, value } = e.target
+    const sanitizedValue = NUMERIC_PROFILE_FIELDS.has(name) ? keepDigitsOnly(value) : value
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: sanitizedValue
     }))
   }
 
@@ -112,6 +116,9 @@ export default function MiPerfil() {
               name="telefono"
               value={formData.telefono}
               onChange={handleChange}
+              inputMode="numeric"
+              pattern="[0-9]*"
+              onKeyDown={preventNonDigitKey}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-700"
             />
           </div>

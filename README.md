@@ -1,4 +1,10 @@
 # Sistema de Gestión de Sustancias Controladas - República Dominicana
+### Actualizaciones 19/12/2025:
+- Quitamos el tipo de solicitante de la pantalla de registro de usuarios.
+- Ahora luego de registrar le dice al usuario que se le envio un correo.
+- Ahora las solicitudes tienen un formato: EXP-19122025-00001
+- El motivo de devolver la solicitud + que campos tiene que editar.
+- Cambio en el dashboard del admin donde ahora el campo "Departamento" es un catalogo para elegir entre las opciones.
 
 ### Partes
 
@@ -91,7 +97,7 @@
 
 ### Base de Datos
 
-- **SQL Server 2022** con scripts en `database/schema_sqlserver.sql` y migraciones versionadas en `database/migrations` para sincronizar constraints, catálogos y nuevas columnas/estados.
+- **SQL Server 2022** con scripts en `database/schema_sqlserver.sql`.
 ---
 
 ### Esquema Normalizado (3FN)

@@ -93,7 +93,7 @@ const ChangePasswordModal = ({ open, onClose }) => {
 
         <form className="space-y-4" onSubmit={handleSubmit}>
           <div>
-            <label className="form-label" htmlFor="passwordActual">
+            <label className="form-label required" htmlFor="passwordActual">
               Contraseña actual
             </label>
             <input
@@ -108,7 +108,7 @@ const ChangePasswordModal = ({ open, onClose }) => {
           </div>
 
           <div>
-            <label className="form-label" htmlFor="passwordNueva">
+            <label className="form-label required" htmlFor="passwordNueva">
               Nueva contraseña
             </label>
             <input
@@ -124,7 +124,7 @@ const ChangePasswordModal = ({ open, onClose }) => {
           </div>
 
           <div>
-            <label className="form-label" htmlFor="passwordConfirmacion">
+            <label className="form-label required" htmlFor="passwordConfirmacion">
               Confirmar contraseña
             </label>
             <input

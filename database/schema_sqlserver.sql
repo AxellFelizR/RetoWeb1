@@ -2531,7 +2531,7 @@ BEGIN
     SET NOCOUNT ON;
 
     DECLARE @fecha_actual DATE = CAST(GETDATE() AS DATE);
-    DECLARE @numero_expediente VARCHAR(50) = CONCAT('EXP-', FORMAT(@fecha_actual, 'yyyyMMdd'), '-', RIGHT('000000' + CAST(ABS(CHECKSUM(NEWID())) % 1000000 AS VARCHAR(6)), 6));
+    DECLARE @numero_expediente_base VARCHAR(40) = CONCAT('EXP-', FORMAT(@fecha_actual, 'yyyyMMdd'), '-');
 
     INSERT INTO solicitud (
         id_solicitante,
@@ -2552,7 +2552,7 @@ BEGIN
         @id_solicitante,
         @id_tipo_servicio,
         @id_tipo_tramite,
-        @numero_expediente,
+        CONCAT(@numero_expediente_base, 'PEND'),
         'CREADA',
         @prioridad,
         COALESCE(@fecha_vencimiento, DATEADD(day, 30, GETDATE())),
@@ -2565,7 +2565,15 @@ BEGIN
         @monto_total_reportado
     );
 
-    SELECT CAST(SCOPE_IDENTITY() AS INT) AS id_solicitud;
+    DECLARE @id_nueva_solicitud INT = CAST(SCOPE_IDENTITY() AS INT);
+    DECLARE @sufijo_id VARCHAR(6) = RIGHT('000000' + CAST(@id_nueva_solicitud AS VARCHAR(6)), 6);
+    DECLARE @numero_expediente_final VARCHAR(60) = CONCAT(@numero_expediente_base, @sufijo_id);
+
+    UPDATE solicitud
+    SET numero_expediente = @numero_expediente_final
+    WHERE id_solicitud = @id_nueva_solicitud;
+
+    SELECT @id_nueva_solicitud AS id_solicitud;
 END;
 GO
 

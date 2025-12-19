@@ -95,7 +95,7 @@ const Login = () => {
           {/* Formulario */}
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="form-group">
-              <label className="form-label" htmlFor="login-email">
+              <label className="form-label required" htmlFor="login-email">
                 {isEmpleado ? 'Email corporativo' : 'Email'}
               </label>
               <input
@@ -110,7 +110,7 @@ const Login = () => {
             </div>
 
             <div className="form-group">
-              <label className="form-label" htmlFor="login-password">Contraseña</label>
+              <label className="form-label required" htmlFor="login-password">Contraseña</label>
               <input
                 id="login-password"
                 type="password"

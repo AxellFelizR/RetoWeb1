@@ -29,8 +29,11 @@ export class SolicitanteRepository {
   }
 
   static normalizeDatos(datos) {
+    const DEFAULT_TIPO_SOLICITANTE = 'PROFESIONAL';
+
     return {
-      tipo_solicitante: datos.tipo_solicitante || 'PROFESIONAL',
+      // El tipo de solicitante para registros externos siempre es fijo y solo lo puede cambiar un administrador.
+      tipo_solicitante: DEFAULT_TIPO_SOLICITANTE,
       email: datos.email?.trim(),
       password_hash: datos.password_hash,
       telefono: datos.telefono || datos.celular || '',

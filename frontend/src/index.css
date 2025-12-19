@@ -75,6 +75,12 @@ html {
   @apply block text-sm font-semibold mb-2 text-primary-700;
 }
 
+.form-label.required::after,
+.required-label::after {
+  content: ' *';
+  color: #ef4444;
+}
+
 .table-container {
   @apply overflow-x-auto;
 }

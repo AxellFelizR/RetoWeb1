@@ -3,8 +3,16 @@ import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { adminAPI, empleadoAPI, servicioAPI, solicitudAPI } from '../../services/api'
 import { FiEye, FiLayers, FiPlusCircle, FiRefreshCw, FiTrash2, FiUserPlus } from 'react-icons/fi'
+import { keepDigitsOnly, keepDecimalNumber, preventNonDigitKey, preventNonDecimalKey } from '../../utils/numericInput'
 
 const ROLES_DISPONIBLES = ['VENTANILLA', 'TECNICO_UPC', 'ENCARGADO_UPC', 'DIRECCION', 'DNCD', 'ADMIN']
+const DEPARTAMENTOS_DISPONIBLES = [
+  'VENTANILLA UNICA',
+  'UPC',
+  'DIR. SUSTANCIAS CONTROLADAS',
+  'DNCD',
+  'ADMINISTRACION'
+]
 const ESTADOS_EMPLEADO = ['ACTIVO', 'INACTIVO', 'SUSPENDIDO']
 const ESTADOS_SOLICITUD = [
   'TODAS',
@@ -43,7 +51,7 @@ const AdminPanel = () => {
     nombre_completo: '',
     email: '',
     cedula: '',
-    departamento: '',
+    departamento: DEPARTAMENTOS_DISPONIBLES[0],
     rol: 'VENTANILLA'
   })
   const [creandoEmpleado, setCreandoEmpleado] = useState(false)
@@ -166,16 +174,23 @@ const AdminPanel = () => {
   }, [fetchAuditoria])
 
   const handleNuevoEmpleadoChange = (campo, valor) => {
+    const sanitizedValue = campo === 'cedula' ? keepDigitsOnly(valor) : valor
     setNuevoEmpleado((prev) => ({
       ...prev,
-      [campo]: valor
+      [campo]: sanitizedValue
     }))
   }
 
   const handleNuevoServicioChange = (campo, valor) => {
+    let sanitizedValue = valor
+    if (campo === 'dias_respuesta') {
+      sanitizedValue = keepDigitsOnly(valor)
+    } else if (campo === 'costo_administrativo') {
+      sanitizedValue = keepDecimalNumber(valor)
+    }
     setNuevoServicio((prev) => ({
       ...prev,
-      [campo]: valor
+      [campo]: sanitizedValue
     }))
   }
 
@@ -191,7 +206,7 @@ const AdminPanel = () => {
         rol: nuevoEmpleado.rol
       })
       toast.success('Cuenta creada exitosamente')
-      setNuevoEmpleado({ nombre_completo: '', email: '', cedula: '', departamento: '', rol: 'VENTANILLA' })
+      setNuevoEmpleado({ nombre_completo: '', email: '', cedula: '', departamento: DEPARTAMENTOS_DISPONIBLES[0], rol: 'VENTANILLA' })
       fetchEmpleados()
     } catch (error) {
       toast.error(error?.message || 'No se pudo crear la cuenta')
@@ -419,7 +434,7 @@ const AdminPanel = () => {
         </div>
         <form className="grid grid-cols-1 md:grid-cols-2 gap-4" onSubmit={handleCrearEmpleado}>
           <div>
-            <label className="form-label" htmlFor="nombreCompleto">Nombre completo</label>
+            <label className="form-label required" htmlFor="nombreCompleto">Nombre completo</label>
             <input
               id="nombreCompleto"
               className="input-field"
@@ -429,7 +444,7 @@ const AdminPanel = () => {
             />
           </div>
           <div>
-            <label className="form-label" htmlFor="emailInstitucional">Email institucional</label>
+            <label className="form-label required" htmlFor="emailInstitucional">Email institucional</label>
             <input
               id="emailInstitucional"
               type="email"
@@ -440,27 +455,34 @@ const AdminPanel = () => {
             />
           </div>
           <div>
-            <label className="form-label" htmlFor="cedulaEmpleado">Cédula</label>
+            <label className="form-label required" htmlFor="cedulaEmpleado">Cédula</label>
             <input
               id="cedulaEmpleado"
               className="input-field"
               value={nuevoEmpleado.cedula}
               onChange={(e) => handleNuevoEmpleadoChange('cedula', e.target.value)}
+                inputMode="numeric"
+                pattern="[0-9]*"
+                onKeyDown={preventNonDigitKey}
               required
             />
           </div>
           <div>
-            <label className="form-label" htmlFor="departamentoEmpleado">Departamento</label>
-            <input
+            <label className="form-label required" htmlFor="departamentoEmpleado">Departamento</label>
+            <select
               id="departamentoEmpleado"
               className="input-field"
               value={nuevoEmpleado.departamento}
               onChange={(e) => handleNuevoEmpleadoChange('departamento', e.target.value)}
               required
-            />
+            >
+              {DEPARTAMENTOS_DISPONIBLES.map((departamento) => (
+                <option key={departamento} value={departamento}>{departamento}</option>
+              ))}
+            </select>
           </div>
           <div>
-            <label className="form-label" htmlFor="rolEmpleado">Rol</label>
+            <label className="form-label required" htmlFor="rolEmpleado">Rol</label>
             <select
               id="rolEmpleado"
               className="input-field"
@@ -560,7 +582,7 @@ const AdminPanel = () => {
                 <h3 className="font-semibold">Registrar nuevo servicio</h3>
               </div>
               <div>
-                <label className="form-label" htmlFor="nombreServicio">Nombre</label>
+                <label className="form-label required" htmlFor="nombreServicio">Nombre</label>
                 <input
                   id="nombreServicio"
                   className="input-field"
@@ -590,6 +612,9 @@ const AdminPanel = () => {
                     className="input-field"
                     value={nuevoServicio.dias_respuesta}
                     onChange={(e) => handleNuevoServicioChange('dias_respuesta', e.target.value)}
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    onKeyDown={preventNonDigitKey}
                   />
                 </div>
                 <div>
@@ -616,6 +641,8 @@ const AdminPanel = () => {
                   value={nuevoServicio.costo_administrativo}
                   disabled={!nuevoServicio.requiere_costo_administrativo}
                   onChange={(e) => handleNuevoServicioChange('costo_administrativo', e.target.value)}
+                  inputMode="decimal"
+                  onKeyDown={preventNonDecimalKey}
                 />
               </div>
               <button

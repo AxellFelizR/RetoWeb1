@@ -98,6 +98,30 @@ const DetalleSolicitud = () => {
     return wizardSummary?.campos || []
   }, [serviceConfig, solicitud?.datos_servicio, wizardSummary])
 
+  const camposObservados = useMemo(() => {
+    if (!Array.isArray(solicitud?.revision_campos)) {
+      return []
+    }
+    return solicitud.revision_campos
+      .filter((campo) => (campo.estado_campo || campo.estado || '').toUpperCase() === 'OBSERVADO')
+      .map((campo, index) => ({
+        id: campo.id_revision || `${campo.nombre_campo || 'campo'}-${index}`,
+        etiqueta: campo.etiqueta_campo || campo.nombre_campo || 'Campo observado',
+        comentario: campo.comentario_revision || 'Sin detalle',
+        fecha: campo.fecha_revision || null
+      }))
+  }, [solicitud?.revision_campos])
+
+  const motivoDevolucion = useMemo(() => {
+    if (!Array.isArray(historial) || historial.length === 0) {
+      return null
+    }
+    const eventoDevuelto = historial.find((evento) =>
+      (evento.estado_nuevo || evento.estado_destino || '').toUpperCase().startsWith('DEVUELTA')
+    )
+    return eventoDevuelto?.motivo_cambio || eventoDevuelto?.comentario_adicional || null
+  }, [historial])
+
   useEffect(() => {
     const shouldLoad = debeMostrarCertificado && solicitud?.id_solicitud
     if (!shouldLoad) {
@@ -337,23 +361,59 @@ const DetalleSolicitud = () => {
       )}
 
       {puedeCorregir && (
-        <div className="card mb-6 border border-amber-200 bg-amber-50 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="text-xl font-bold text-amber-900">Solicitud devuelta por Ventanilla</h2>
-            <p className="text-amber-800 mt-1">
-              Revisa las observaciones recibidas, corrige la información necesaria y vuelve a enviar tu solicitud.
-            </p>
+        <>
+          <div className="card mb-6 border border-amber-200 bg-amber-50 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-amber-900">Solicitud devuelta por Ventanilla</h2>
+              <p className="text-amber-800 mt-1">
+                Revisa las observaciones recibidas, corrige la información necesaria y vuelve a enviar tu solicitud.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                const destinoId = solicitud?.id_solicitud || id
+                navigate(`/solicitud/${destinoId}/correcciones`, { state: { fromDetalle: true, solicitudId: destinoId } })
+              }}
+              className="self-start md:self-auto px-5 py-3 bg-primary-950 text-white rounded-lg hover:bg-primary-800"
+            >
+              Corregir y reenviar
+            </button>
           </div>
-          <button
-            onClick={() => {
-              const destinoId = solicitud?.id_solicitud || id
-              navigate(`/solicitud/${destinoId}/correcciones`, { state: { fromDetalle: true, solicitudId: destinoId } })
-            }}
-            className="self-start md:self-auto px-5 py-3 bg-primary-950 text-white rounded-lg hover:bg-primary-800"
-          >
-            Corregir y reenviar
-          </button>
-        </div>
+
+          <div className="card mb-6 border border-amber-100">
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold text-primary-950">¿Qué necesitas corregir?</h3>
+              <p className="text-sm text-gray-600 mt-1">
+                Estos son los campos que se solicitaron ajustar antes de volver a enviar tu expediente.
+              </p>
+            </div>
+            {motivoDevolucion && (
+              <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <p className="font-semibold">Motivo general:</p>
+                <p>{motivoDevolucion}</p>
+              </div>
+            )}
+            {camposObservados.length > 0 ? (
+              <ul className="divide-y divide-gray-100">
+                {camposObservados.map((campo) => (
+                  <li key={campo.id} className="py-3">
+                    <p className="font-semibold text-primary-950">{campo.etiqueta}</p>
+                    <p className="text-sm text-gray-700 mt-1">{campo.comentario}</p>
+                    {campo.fecha && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Observado el {formatDateTime(campo.fecha)}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-gray-600">
+                No encontramos observaciones específicas. Si tienes dudas, comunícate con Ventanilla antes de reenviar.
+              </p>
+            )}
+          </div>
+        </>
       )}
 
       {/* Encabezado */}

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { FiArrowLeft, FiCheckCircle, FiAlertTriangle, FiDownload, FiChevronRight } from 'react-icons/fi'
-import { solicitudAPI, archivoAPI } from '../../services/api'
+import { solicitudAPI, archivoAPI, certificadoAPI } from '../../services/api'
 import SERVICIO_FORM_CONFIG from '../../config/serviciosFormConfig'
 import {
   TIPOS_SERVICIO_MAP,
@@ -10,78 +10,8 @@ import {
 } from '../../constants/solicitudOptions'
 import { buildCamposResumen } from '../../utils/solicitudHelpers'
 import { useAuthStore } from '../../store/authStore'
-import jsPDF from 'jspdf'
 
 /* eslint-disable complexity */
-
-const PDF_MAX_CURSOR = 760
-const PDF_RESET_CURSOR = 40
-
-const PDF_COLOR_PALETTE = {
-  background: '#04060d',
-  panel: '#0f182a',
-  section: '#17253d',
-  border: '#33d0bc',
-  text: '#f8fafc',
-  label: '#94a3b8',
-  accent: '#5eead4'
-}
-
-const parseHexColor = (hex) => {
-  if (!hex) {
-    return { r: 0, g: 0, b: 0 }
-  }
-  const normalized = hex.replace('#', '')
-  const expand = normalized.length === 3
-    ? normalized.split('').map((digit) => digit + digit).join('')
-    : normalized.padEnd(6, '0').slice(0, 6)
-  const bigint = Number.parseInt(expand, 16)
-  if (Number.isNaN(bigint)) {
-    return { r: 0, g: 0, b: 0 }
-  }
-  return {
-    r: (bigint >> 16) & 255,
-    g: (bigint >> 8) & 255,
-    b: bigint & 255
-  }
-}
-
-const setFillColorHex = (doc, hex) => {
-  const { r, g, b } = parseHexColor(hex)
-  doc.setFillColor(r, g, b)
-}
-
-const setStrokeColorHex = (doc, hex) => {
-  const { r, g, b } = parseHexColor(hex)
-  doc.setDrawColor(r, g, b)
-}
-
-const drawAlignedText = (doc, text, x, y, align = 'left', options = {}) => {
-  const opts = { ...(options || {}), align }
-  doc.text(text, x, y, opts)
-}
-
-const agregarLineasPdf = (doc, lines, cursorInicial, x = 40, step = 18) => {
-  let cursorY = cursorInicial
-  for (const line of lines) {
-    doc.text(line, x, cursorY)
-    cursorY += step
-  }
-  return cursorY
-}
-
-const agregarListadoPdf = (doc, items, cursorInicial, formatter, x = 50) => {
-  let cursorY = cursorInicial
-  for (const item of items) {
-    doc.text(formatter(item), x, cursorY)
-    cursorY += 14
-    if (cursorY > PDF_MAX_CURSOR) {
-      doc.addPage()
-      cursorY = PDF_RESET_CURSOR
-    }
-  }
-  return cursorY
-}
 
 const buildPdfPreviewContent = ({ pdfLoading, pdfPreviewUrl, solicitud }) => {
   if (!solicitud) {
@@ -309,394 +239,35 @@ const DetalleRevision = () => {
     return buildCamposResumen(solicitud.datos_servicio, serviceConfig)
   }, [solicitud, serviceConfig])
 
-  const generarPdfResolucion = useCallback(() => {
+  const generarPdfResolucion = useCallback(async () => {
     if ((!esDireccion && !esDncd) || !solicitud) {
       return
     }
 
-    setPdfLoading(true)
-
-    const datosServicio = solicitud.datos_servicio || {}
-    const sanitize = (value, fallback = '') => {
-      if (value === undefined || value === null) return fallback
-      if (typeof value === 'string') {
-        const trimmed = value.trim()
-        return trimmed || fallback
-      }
-      if (typeof value === 'number') {
-        return Number.isNaN(value) ? fallback : String(value)
-      }
-      return value || fallback
-    }
-
-    const getDato = (keys, fallback = '') => {
-      const keyList = Array.isArray(keys) ? keys : [keys]
-      for (const key of keyList) {
-        if (!Object.prototype.hasOwnProperty.call(datosServicio, key)) continue
-        const valor = datosServicio[key]
-        if (valor === undefined || valor === null) continue
-        if (typeof valor === 'string' && !valor.trim()) continue
-        if (Array.isArray(valor) && valor.length === 0) continue
-        return valor
-      }
-      return fallback
-    }
-
-    const toUpper = (valor) => sanitize(valor).toString().toUpperCase()
-
-    const buildProfesionFlags = (valor) => {
-      const normalized = toUpper(valor)
-      const base = {
-        medicina: normalized.includes('MEDIC') && !normalized.includes('VETERIN'),
-        veterinaria: normalized.includes('VETERIN'),
-        odontologia: normalized.includes('ODONTO'),
-        otra: false,
-        descripcion: normalized
-      }
-      base.otra = Boolean(normalized && !base.medicina && !base.veterinaria && !base.odontologia)
-      return base
-    }
-
-    const normalizeCategorias = (raw) => {
-      if (!raw) return []
-      if (Array.isArray(raw)) return raw
-      if (typeof raw === 'object') {
-        return Object.entries(raw)
-          .filter(([, val]) => Boolean(val))
-          .map(([key]) => key)
-      }
-      if (typeof raw === 'string') {
-        return raw.split(/[,;/|]+/).map((item) => item.trim()).filter(Boolean)
-      }
-      return []
-    }
-
-    const categorias = (() => {
-      const set = new Set(normalizeCategorias(
-        getDato([
-          'categorias_autorizadas',
-          'categorias_droga',
-          'categorias',
-          'clases_autorizadas'
-        ])
-      ).map((item) => item.toUpperCase()))
-      return {
-        I: set.has('I'),
-        II: set.has('II'),
-        III: set.has('III'),
-        IV: set.has('IV')
-      }
-    })()
-
-    const profesionFlags = buildProfesionFlags(
-      solicitud.profesion_solicitante || getDato(['profesion', 'ocupacion'])
-    )
-
-    const estatusOtra = toUpper(
-      getDato(['estatus_otro_detalle', 'estatus_explicacion'], solicitud.motivo_detalle || '')
-    )
-    const estatusFlags = {
-      primera: !solicitud.numero_cidc_anterior,
-      renovacion: Boolean(solicitud.numero_cidc_anterior),
-      anteriorNegada: Boolean(getDato(['solicitud_anterior_negada', 'estatus_negada'])),
-      cidcReprobado: Boolean(getDato(['cidc_reprobado', 'estatus_cidc_reprobado'])),
-      otra: Boolean(estatusOtra),
-      otraDetalle: estatusOtra
-    }
-
-    const formatCurrency = (valor) => {
-      const number = Number(valor ?? solicitud.monto_total_reportado)
-      if (Number.isNaN(number)) return ''
-      return new Intl.NumberFormat('es-DO', {
-        style: 'currency',
-        currency: 'DOP',
-        minimumFractionDigits: 2
-      }).format(number)
-    }
-
-    const formatDate = (valor) => {
-      if (!valor) return ''
-      const date = new Date(valor)
-      return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('es-DO')
-    }
-
     try {
-      const doc = new jsPDF({ unit: 'pt', format: 'a4' })
-      const margin = 36
-      const pageSize = doc.internal.pageSize || {}
-      const pageWidth = typeof pageSize.getWidth === 'function'
-        ? pageSize.getWidth()
-        : pageSize.width || 612
-      const pageHeight = typeof pageSize.getHeight === 'function'
-        ? pageSize.getHeight()
-        : pageSize.height || 792
-      const innerWidth = pageWidth - margin * 2
-      let cursorY = margin
+      setPdfLoading(true)
+      setPdfPreviewUrl('')
 
-      const fillRectHex = (x, y, width, height, color, style = 'F') => {
-        setFillColorHex(doc, color)
-        doc.rect(x, y, width, height, style)
+      const blobData = await certificadoAPI.descargarPDFPorSolicitud(id)
+      const blob = blobData instanceof Blob
+        ? blobData
+        : new Blob([blobData], { type: 'application/pdf' })
+      const objectUrl = globalThis.URL?.createObjectURL
+        ? globalThis.URL.createObjectURL(blob)
+        : ''
+
+      if (!objectUrl) {
+        throw new Error('No fue posible crear la vista previa del PDF')
       }
 
-      const strokeRectHex = (x, y, width, height, color) => {
-        setStrokeColorHex(doc, color)
-        doc.rect(x, y, width, height)
-      }
-
-      const drawFieldBlock = (label, value, x, y, width, height = 28) => {
-        fillRectHex(x, y, width, height, PDF_COLOR_PALETTE.panel, 'F')
-        strokeRectHex(x, y, width, height, PDF_COLOR_PALETTE.border)
-        doc.setFont('helvetica', 'normal').setFontSize(8).setTextColor(148, 163, 184)
-        doc.text(label, x + 6, y + 10)
-        doc.setFont('helvetica', 'bold').setFontSize(11)
-        const textValue = value === undefined || value === null || value === ''
-          ? '________________'
-          : String(value)
-        doc.setTextColor(248, 250, 252)
-        doc.text(textValue, x + 6, y + height - 10, { maxWidth: width - 12 })
-      }
-
-      const drawFieldRow = (columns, options = {}) => {
-        const height = options.height ?? 30
-        const gap = options.gap ?? 8
-        const rowY = options.y ?? cursorY
-        const totalSpan = columns.reduce((sum, column) => sum + (column.span || 1), 0)
-        const startX = options.startX ?? margin
-        const totalWidth = options.totalWidth ?? innerWidth
-        let currentX = startX
-
-        columns.forEach((column, index) => {
-          const width = ((totalWidth - gap * (columns.length - 1)) * (column.span || 1)) / totalSpan
-          drawFieldBlock(column.label, column.value, currentX, rowY, width, height)
-          currentX += width + gap
-        })
-
-        cursorY = Math.max(cursorY, rowY + height + (options.afterGap ?? 6))
-      }
-
-      const drawSectionHeader = (label) => {
-        setFillColorHex(doc, PDF_COLOR_PALETTE.section)
-        setStrokeColorHex(doc, PDF_COLOR_PALETTE.border)
-        doc.rect(margin, cursorY, innerWidth, 24, 'FD')
-        doc.setFont('helvetica', 'bold').setFontSize(12).setTextColor(248, 250, 252)
-        doc.text(label, margin + 10, cursorY + 16)
-        cursorY += 30
-      }
-
-      const drawCheckbox = (x, y, label, checked, extra = '') => {
-        const size = 12
-        setStrokeColorHex(doc, checked ? PDF_COLOR_PALETTE.accent : PDF_COLOR_PALETTE.border)
-        doc.rect(x, y, size, size)
-        if (checked) {
-          const { r, g, b } = parseHexColor(PDF_COLOR_PALETTE.accent)
-          doc.setDrawColor(r, g, b)
-          doc.line(x + 2, y + size / 2, x + size / 2 - 1, y + size - 2)
-          doc.line(x + size / 2 - 1, y + size - 2, x + size - 2, y + 2)
-        }
-        doc.setFont('helvetica', 'normal').setFontSize(10).setTextColor(248, 250, 252)
-        const labelText = extra ? `${label}: ${extra}` : label
-        doc.text(labelText, x + size + 6, y + 10, { maxWidth: 180 })
-      }
-
-      const drawCheckboxRow = (items, options = {}) => {
-        const gap = options.gap ?? 28
-        const rowY = options.y ?? cursorY
-        const widthPerItem = (innerWidth - gap * (items.length - 1)) / items.length
-        items.forEach((item, idx) => {
-          drawCheckbox(margin + idx * (widthPerItem + gap), rowY, item.label, item.checked, item.detail)
-        })
-        cursorY = Math.max(cursorY, rowY + (options.height ?? 20) + (options.afterGap ?? 8))
-      }
-
-      const drawNotas = () => {
-        const paragraphLineHeight = 12
-
-        doc.setFont('helvetica', 'bold').setFontSize(11).setTextColor(248, 250, 252)
-        doc.text('Nota:', margin, cursorY)
-        cursorY += 14
-
-        doc.setFont('helvetica', 'normal').setFontSize(10)
-        const notaLines = doc.splitTextToSize([
-          'Este permiso no es válido si:',
-          'a) No está debidamente firmado y sellado por los funcionarios autorizados por MSP y DNCD.',
-          'b) Los renglones que lo conforman no están completos.',
-          'c) Si se determina que los datos suministrados para su autorización no corresponden con la verdad.',
-          'd) Tiene tachaduras o borraduras en su contenido.'
-        ].join('\n'), innerWidth - 24)
-        doc.text(notaLines, margin + 12, cursorY)
-        cursorY += notaLines.length * paragraphLineHeight + 10
-
-        doc.setFont('helvetica', 'bold').setFontSize(11)
-        doc.text('Advertencia:', margin, cursorY)
-        cursorY += 14
-
-        doc.setFont('helvetica', 'normal').setFontSize(10)
-        const advertenciaLines = doc.splitTextToSize(
-          'El código Penal de la República Dominicana sanciona la falsificación, alteración o falsedad de escritura técnica o pública.',
-          innerWidth - 24
-        )
-        doc.text(advertenciaLines, margin + 12, cursorY)
-        cursorY += advertenciaLines.length * paragraphLineHeight + 20
-      }
-
-      fillRectHex(0, 0, pageWidth, pageHeight, PDF_COLOR_PALETTE.background)
-
-      const centerX = margin + innerWidth / 2
-
-      doc.setFont('helvetica', 'bold').setFontSize(22).setTextColor(248, 250, 252)
-      drawAlignedText(doc, 'SOLICITUD', centerX, cursorY, 'center')
-      cursorY += 24
-      doc.setFontSize(12)
-      drawAlignedText(doc, 'CERTIFICADO DE INSCRIPCIÓN DE SUSTANCIAS CONTROLADAS', centerX, cursorY, 'center')
-      cursorY += 14
-      drawAlignedText(doc, '- CLASE A -', centerX, cursorY, 'center')
-      cursorY += 24
-
-      doc.setFont('helvetica', 'normal').setFontSize(11)
-      drawAlignedText(
-        doc,
-        `No. CIDC: ${sanitize(solicitud.numero_cidc_anterior || solicitud.numero_expediente || '')}`,
-        margin + innerWidth,
-        cursorY,
-        'right'
-      )
-      cursorY += 12
-      drawAlignedText(
-        doc,
-        `Expediente: ${solicitud.numero_expediente || solicitud.numero_solicitud || `Solicitud #${id}`}`,
-        margin + innerWidth,
-        cursorY,
-        'right'
-      )
-      cursorY += 18
-
-      drawSectionHeader('IDENTIFICACIÓN')
-      drawFieldRow([
-        { label: '1) Nombre del Profesional', value: toUpper(solicitud.nombre_solicitante) }
-      ], { height: 34 })
-      drawFieldRow([
-        { label: '2) Dirección / Correo Postal (P.O.B)', value: toUpper(getDato(['direccion_postal', 'direccion'], solicitud.direccion_postal)) }
-      ], { height: 34 })
-      drawFieldRow([
-        { label: '3) Cédula de Identidad y Electoral', value: toUpper(solicitud.identificador_solicitante || getDato(['cedula'])) },
-        { label: '4) Exequátur', value: toUpper(getDato(['exequatur', 'numero_exequatur'])) },
-        { label: '5) No. Colegiatura', value: toUpper(getDato(['colegiatura', 'numero_colegiatura'])) }
-      ])
-      drawFieldRow([
-        { label: '6) Teléfono(s) Residencial', value: sanitize(getDato(['telefono_residencial'], solicitud.telefono_contacto)) },
-        { label: '7) Celular', value: sanitize(getDato(['celular', 'telefono_celular'], solicitud.telefono_contacto)) }
-      ])
-      drawFieldRow([
-        { label: '8) Lugar de Trabajo', value: toUpper(getDato(['lugar_trabajo', 'institucion', 'empresa'])) },
-        { label: '9) E-mail', value: sanitize(solicitud.email_solicitante || getDato(['email'])) }
-      ], { height: 30 })
-      drawFieldRow([
-        { label: '10) Dirección del Lugar de Trabajo', value: toUpper(getDato(['direccion_trabajo', 'direccion_empresa'])), span: 2 },
-        { label: '11) Teléfono(s)', value: sanitize(getDato(['telefono_trabajo', 'telefono_oficina'])) }
-      ], { height: 34 })
-
-      cursorY += 6
-      doc.setFont('helvetica', 'bold').setFontSize(11).setTextColor(248, 250, 252)
-      doc.text('12) PROFESIÓN', margin, cursorY)
-      cursorY += 14
-      drawCheckboxRow([
-        { label: 'a) Medicina', checked: profesionFlags.medicina },
-        { label: 'b) Medicina Veterinaria', checked: profesionFlags.veterinaria }
-      ], { height: 20 })
-      drawCheckboxRow([
-        { label: 'c) Odontología', checked: profesionFlags.odontologia },
-        { label: 'd) Otra, especifique', checked: profesionFlags.otra, detail: profesionFlags.otra ? profesionFlags.descripcion : '' }
-      ], { height: 20 })
-
-      doc.text('13) ESTATUS', margin, cursorY)
-      cursorY += 14
-      drawCheckboxRow([
-        { label: 'a) Primera Solicitud', checked: estatusFlags.primera },
-        { label: 'b) Renovación', checked: estatusFlags.renovacion }
-      ], { height: 20 })
-      drawCheckboxRow([
-        { label: 'c) Solicitud anterior negada', checked: estatusFlags.anteriorNegada },
-        { label: 'd) CIDC reprobado, suspendido', checked: estatusFlags.cidcReprobado }
-      ], { height: 20 })
-      drawCheckboxRow([
-        { label: 'e) Otra, especifique', checked: estatusFlags.otra, detail: estatusFlags.otra ? estatusFlags.otraDetalle : '' }
-      ], { height: 20 })
-
-      doc.setFont('helvetica', 'bold').setFontSize(10)
-      doc.text('Categorías de Drogas Controladas que tendrá derecho a prescribir o administrar:', margin, cursorY)
-      cursorY += 12
-      drawCheckboxRow([
-        { label: 'I', checked: categorias.I },
-        { label: 'II', checked: categorias.II },
-        { label: 'III', checked: categorias.III },
-        { label: 'IV', checked: categorias.IV }
-      ], { gap: 36, height: 20 })
-
-      drawFieldRow([
-        { label: 'Si su respuesta fue b o d, No. CIDC', value: toUpper(solicitud.numero_cidc_anterior || solicitud.numero_expediente || '') },
-        { label: 'Si su respuesta fue c, d o e explique el motivo en el reverso (Renglón No. 13)', value: estatusFlags.otraDetalle }
-      ], { height: 36 })
-
-      drawFieldRow([
-        { label: '14) SUMA A PAGAR: RD$', value: formatCurrency(solicitud.monto_total_reportado || getDato(['suma_pagar'])) },
-        { label: 'Fecha solicitud', value: formatDate(solicitud.fecha_creacion) },
-        { label: 'Firma Interesado', value: '' }
-      ], { height: 32 })
-
-      const usoInternoWidth = innerWidth * 0.35
-      fillRectHex(margin, cursorY, usoInternoWidth, 34, PDF_COLOR_PALETTE.section, 'FD')
-      doc.setFont('helvetica', 'bold').setFontSize(11).setTextColor(248, 250, 252)
-      doc.text('SÓLO PARA USO INTERNO', margin + 12, cursorY + 22)
-      drawFieldRow([
-        { label: 'Fecha aprobado', value: formatDate(solicitud.fecha_actualizacion) },
-        { label: 'No. Factura', value: sanitize(getDato(['numero_factura'], solicitud.resumen_pago_label)) },
-        { label: 'Fecha pago', value: formatDate(getDato(['fecha_pago'])) }
-      ], {
-        startX: margin + usoInternoWidth + 10,
-        totalWidth: innerWidth - usoInternoWidth - 10,
-        y: cursorY,
-        height: 34,
-        afterGap: 12
-      })
-
-      cursorY += 24
-      drawNotas()
-
-      const pdfUri = doc.output('datauristring')
-      setPdfPreviewUrl(pdfUri)
+      setPdfPreviewUrl(objectUrl)
     } catch (error) {
-      console.error('Error generando PDF para Dirección:', error)
-      toast.error('No se pudo generar el PDF de la solicitud')
+      console.error('Error generando el PDF del certificado:', error)
+      toast.error(error?.message || 'No se pudo generar el PDF del certificado')
     } finally {
       setPdfLoading(false)
     }
   }, [esDireccion, esDncd, id, solicitud])
-
-  useEffect(() => {
-    if (!camposResumen || camposResumen.length === 0) {
-      setCamposRevision([])
-      return
-    }
-
-    const mapRevision = new Map()
-    for (const rev of revisionServidor) {
-      mapRevision.set(rev.nombre_campo || rev.etiqueta_campo, rev)
-    }
-
-    const items = camposResumen.map((campo) => {
-      const key = campo.key || campo.label
-      const existente = mapRevision.get(key) || mapRevision.get(campo.label)
-      return {
-        key,
-        label: campo.label,
-        valor: campo.valor,
-        estado: existente?.estado_campo || ESTADO_CAMPO.PENDIENTE,
-        comentario: existente?.comentario_revision || ''
-      }
-    })
-
-    setCamposRevision(items)
-  }, [camposResumen, revisionServidor])
 
   const headerInfo = useMemo(() => {
     const servicioNombre =
@@ -742,6 +313,12 @@ const DetalleRevision = () => {
       generarPdfResolucion()
     }
   }, [esDireccion, esDncd, generarPdfResolucion, solicitud])
+
+  useEffect(() => () => {
+    if (pdfPreviewUrl && globalThis.URL?.revokeObjectURL) {
+      globalThis.URL.revokeObjectURL(pdfPreviewUrl)
+    }
+  }, [pdfPreviewUrl])
 
   const handleCampoEstadoChange = (index, estado) => {
     setCamposRevision((prev) => prev.map((campo, idx) => (idx === index ? { ...campo, estado } : campo)))
@@ -1525,3 +1102,5 @@ const DetalleRevision = () => {
 export default DetalleRevision
 
 /* eslint-enable complexity */
+
+

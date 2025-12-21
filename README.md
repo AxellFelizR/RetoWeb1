@@ -1,10 +1,11 @@
 # Sistema de Gestión de Sustancias Controladas - República Dominicana
-### Actualizaciones 19/12/2025:
+### Actualizaciones 19/12/2025 - 21/12/2025:
 - Quitamos el tipo de solicitante de la pantalla de registro de usuarios.
 - Ahora luego de registrar le dice al usuario que se le envio un correo.
 - Ahora las solicitudes tienen un formato: EXP-19122025-00001
 - El motivo de devolver la solicitud + que campos tiene que editar.
 - Cambio en el dashboard del admin donde ahora el campo "Departamento" es un catalogo para elegir entre las opciones.
+- Se arreglaron los certificados de clase A y clase B.
 
 ### Partes
 

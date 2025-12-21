@@ -14,13 +14,23 @@ const CERT_COLOR_PALETTE = {
   accent: '#5EEAD4'
 };
 
-const chunkArray = (values, size) => {
-  const result = [];
-  for (let i = 0; i < values.length; i += size) {
-    result.push(values.slice(i, i + size));
+const SERVICIO_CLASE_METADATA = Object.freeze({
+  1: {
+    clase: 'A',
+    titulo: 'Certificado Clase A - Profesional',
+    descripcion: 'Certificado de inscripción de sustancias controladas'
+  },
+  2: {
+    clase: 'B',
+    titulo: 'Certificado Clase B - Establecimiento Privado',
+    descripcion: 'Certificado de inscripción de sustancias controladas'
+  },
+  3: {
+    clase: 'B',
+    titulo: 'Certificado Clase B - Institución Pública',
+    descripcion: 'Certificado de inscripción de sustancias controladas'
   }
-  return result;
-};
+});
 
 const sanitizeString = (value) => {
   if (value === undefined || value === null) return '';
@@ -36,15 +46,24 @@ const formatDateEs = (value) => {
   return date.toLocaleDateString('es-DO');
 };
 
-const formatCurrencyDOP = (value) => {
-  if (value === undefined || value === null || value === '') return '';
-  const number = Number(value);
-  if (Number.isNaN(number)) return '';
-  return new Intl.NumberFormat('es-DO', {
-    style: 'currency',
-    currency: 'DOP',
-    minimumFractionDigits: 2
-  }).format(number);
+const deriveClaseMetadata = (solicitud, certificado) => {
+  const servicioId = Number(solicitud?.id_tipo_servicio);
+  const tipoCertificado = sanitizeString(certificado?.tipo_certificado).toUpperCase();
+  const servicioMeta = SERVICIO_CLASE_METADATA[servicioId] || null;
+  let clase = servicioMeta?.clase || (tipoCertificado.includes('CLASE_B') ? 'B' : 'A');
+  if (tipoCertificado.includes('CLASE_A')) {
+    clase = 'A';
+  }
+  const titulo =
+    servicioMeta?.titulo ||
+    sanitizeString(solicitud?.nombre_tipo_servicio) ||
+    `Certificado Clase ${clase}`;
+
+  return {
+    clase,
+    titulo,
+    descripcion: servicioMeta?.descripcion || 'Certificado de inscripción de sustancias controladas'
+  };
 };
 
 const fetchDatoServicio = (source, keys, fallback = '') => {
@@ -119,305 +138,170 @@ const parseCategoriasFlags = (raw) => {
   };
 };
 
-const buildProfesionChecks = (profesionRaw) => {
-  const normalized = toUpperSafe(profesionRaw);
-  const checks = {
-    veterinaria: normalized.includes('VETERIN'),
-    odontologia: normalized.includes('ODONTO')
-  };
-  checks.medicina = normalized.includes('MEDIC') && !checks.veterinaria;
-  checks.otra = Boolean(normalized && !checks.medicina && !checks.veterinaria && !checks.odontologia);
-  checks.descripcion = normalized;
-  return checks;
-};
-
 const buildCertificadoPayload = (solicitud, certificado) => {
   const datosServicio = solicitud?.datos_servicio || {};
   const getDato = (keys, fallback = '') => fetchDatoServicio(datosServicio, keys, fallback);
-  const profesionChecks = buildProfesionChecks(
-    solicitud?.profesion_solicitante || getDato(['profesion', 'ocupacion', 'especialidad'])
-  );
+  const claseMetadata = deriveClaseMetadata(solicitud, certificado);
   const categorias = parseCategoriasFlags(
     getDato(['categorias_autorizadas', 'categorias_droga', 'categorias_permitidas', 'clases_autorizadas', 'categorias'])
   );
-  const sumaPagar = solicitud?.monto_total_reportado ?? getDato(['suma_pagar', 'monto_pagar']);
-  const statusOtraDetalle = toUpperSafe(
-    getDato(['estatus_otro_detalle', 'estatus_explicacion', 'estatus_otra'], solicitud?.motivo_detalle || '')
-  );
 
-  const estatusFlags = {
-    primera: !solicitud?.numero_cidc_anterior,
-    renovacion: Boolean(solicitud?.numero_cidc_anterior),
-    anteriorNegada: inferBooleanFlag(getDato(['solicitud_anterior_negada', 'estatus_negada'])),
-    cidcReprobado: inferBooleanFlag(getDato(['cidc_reprobado', 'estatus_cidc_reprobado', 'reprobado_cidc'])),
-    otra: Boolean(statusOtraDetalle),
-    otraDetalle: statusOtraDetalle
+  const normalizeListValue = (value) => {
+    if (Array.isArray(value)) {
+      return value.map((item) => toUpperSafe(item)).filter(Boolean).join(', ');
+    }
+    return toUpperSafe(value);
   };
 
+  let categoriaTexto = (() => {
+    const activos = Object.entries(categorias)
+      .filter(([, val]) => Boolean(val))
+      .map(([key]) => key);
+    return activos.length ? activos.join(', ') : '';
+  })();
+
+  if (!categoriaTexto) {
+    categoriaTexto = toUpperSafe(getDato(['categoria', 'categoria_establecimiento', 'categoria_permiso']));
+  }
+
+  const actividadRaw = getDato(
+    ['actividades_establecimiento', 'actividad_principal', 'actividad', 'giro_negocio', 'profesion_otro', 'profesion'],
+    solicitud?.profesion_solicitante
+  );
+  const actividadPrincipal = normalizeListValue(actividadRaw) || claseMetadata.titulo;
+
+  const nombreCertificado = toUpperSafe(
+    getDato([
+      'nombre_profesional',
+      'nombre_empresa',
+      'nombre_institucion',
+      'nombre_establecimiento',
+      'nombre_representante',
+      'razon_social'
+    ], solicitud?.nombre_solicitante)
+  );
+
+  const direccionPrincipal = toUpperSafe(
+    getDato([
+      'direccion_postal',
+      'direccion_establecimiento',
+      'direccion_institucion',
+      'direccion_trabajo',
+      'direccion_correspondencia',
+      'direccion'
+    ], solicitud?.direccion_contacto)
+  );
+
+  const ciudad = toUpperSafe(
+    getDato(['ciudad', 'municipio', 'provincia', 'localidad', 'ciudad_establecimiento', 'ciudad_institucion']) ||
+    solicitud?.ciudad ||
+    ''
+  );
+
   return {
+    clase: claseMetadata.clase,
+    tituloCertificado: claseMetadata.titulo,
+    certificadoDescripcion: claseMetadata.descripcion,
     numeroCIDC: toUpperSafe(certificado?.numero_certificado || solicitud?.numero_cidc_anterior || ''),
     numeroExpediente: toUpperSafe(solicitud?.numero_expediente || ''),
-    tipoCertificado: certificado?.tipo_certificado || '',
-    fechaEmision: certificado?.fecha_emision || '',
-    nombreProfesional: toUpperSafe(solicitud?.nombre_solicitante || getDato(['nombre_profesional'])),
-    direccionPostal: toUpperSafe(getDato(['direccion_postal', 'direccion_residencial', 'direccion_correspondencia', 'direccion'])),
-    cedula: toUpperSafe(solicitud?.identificador_solicitante || getDato(['cedula_profesional'])),
-    exequatur: toUpperSafe(getDato(['numero_exequatur', 'exequatur'])),
-    colegiatura: toUpperSafe(getDato(['numero_colegiatura', 'colegiatura'])),
-    telefonoResidencial: sanitizeString(getDato(['telefono_residencial', 'telefono_fijo'])) || sanitizeString(solicitud?.telefono_contacto),
-    celular: sanitizeString(getDato(['telefono_celular', 'celular'])) || sanitizeString(solicitud?.telefono_contacto),
-    lugarTrabajo: toUpperSafe(getDato(['lugar_trabajo', 'institucion', 'empresa', 'establecimiento'])),
-    email: toUpperSafe(solicitud?.email_solicitante || getDato(['correo_contacto', 'email_profesional'])),
-    direccionTrabajo: toUpperSafe(getDato(['direccion_trabajo', 'direccion_consultorio', 'direccion_establecimiento', 'direccion_labora'])),
-    telefonoTrabajo: sanitizeString(getDato(['telefono_trabajo', 'telefono_empresa', 'telefono_oficina'])),
-    profesionChecks,
-    profesionDescripcion: profesionChecks.descripcion,
-    categorias,
-    estatus: estatusFlags,
+    fechaEmision: certificado?.fecha_emision || solicitud?.fecha_actualizacion || solicitud?.fecha_creacion || '',
+    fechaExpiracion: certificado?.fecha_vencimiento || solicitud?.fecha_vencimiento || '',
+    nombreCertificado,
+    direccionPrincipal,
+    direccionAlterna: toUpperSafe(getDato(['direccion_trabajo', 'direccion_establecimiento', 'direccion_institucion'])),
+    ciudad,
+    actividadPrincipal,
+    categoriaTexto: categoriaTexto || 'NO ESPECIFICADA',
     numeroCidcAnterior: toUpperSafe(solicitud?.numero_cidc_anterior || ''),
-    sumaPagar,
-    fechaSolicitud: solicitud?.fecha_creacion || certificado?.fecha_emision || '',
-    fechaAprobado: certificado?.fecha_emision || '',
-    noFactura: toUpperSafe(getDato(['numero_factura', 'factura']) || solicitud?.resumen_pago_label),
-    fechaPago: getDato(['fecha_pago', 'pago_fecha']),
     motivoDetalle: toUpperSafe(solicitud?.motivo_detalle || '')
   };
 };
 
-const renderCertificadoClaseA = (doc, data) => {
-  const margin = 36;
+const renderCertificadoPorClase = (doc, data) => {
+  const margin = 48;
   const innerWidth = doc.page.width - margin * 2;
   let cursorY = margin;
+  const claseLabel = (data.clase || 'A').toUpperCase();
+  const heading = data.tituloCertificado || `CERTIFICADO CLASE ${claseLabel}`;
+  const subheading = data.certificadoDescripcion || 'Certificado de inscripción de sustancias controladas';
+  const panelFill = claseLabel === 'B' ? '#122135' : '#1F1A2E';
 
-  const displayValue = (value) => {
+  const displayValue = (value, { uppercase = true } = {}) => {
     const normalized = sanitizeString(value);
-    return normalized || '________________';
+    if (!normalized) return 'NO ESPECIFICADO';
+    return uppercase ? normalized.toUpperCase() : normalized;
   };
 
-  const drawFieldBlock = (label, value, x, y, width, height = 26) => {
-    doc.save();
-    doc.rect(x, y, width, height).fill(CERT_COLOR_PALETTE.panel);
-    doc.rect(x, y, width, height)
-      .lineWidth(0.8)
-      .strokeColor(CERT_COLOR_PALETTE.border)
-      .stroke();
-
-    doc.font('Helvetica').fontSize(8).fillColor(CERT_COLOR_PALETTE.label)
-      .text(label, x + 6, y + 4, { width: width - 12, height: 10 });
-    doc.font('Helvetica-Bold').fontSize(11).fillColor(CERT_COLOR_PALETTE.text)
-      .text(displayValue(value), x + 6, y + 14, { width: width - 12, height: height - 18 });
-    doc.restore();
-  };
-
-  const drawFieldRow = (columns, options = {}) => {
-    const height = options.height ?? 28;
-    const gap = options.gap ?? 8;
-    const startX = options.startX ?? margin;
-    const totalWidth = options.totalWidth ?? innerWidth;
-    const rowY = options.y ?? cursorY;
-    const totalSpan = columns.reduce((sum, column) => sum + (column.span || 1), 0);
-    let currentX = startX;
-
-    columns.forEach((column, idx) => {
-      const width = ((totalWidth - gap * (columns.length - 1)) * (column.span || 1)) / totalSpan;
-      drawFieldBlock(column.label, column.value, currentX, rowY, width, height);
-      currentX += width + gap;
-    });
-
-    cursorY = Math.max(cursorY, rowY + height + (options.afterGap ?? 6));
-  };
-
-  const drawSectionHeader = (label) => {
-    doc.save();
-    doc.rect(margin, cursorY, innerWidth, 22)
-      .fillAndStroke(CERT_COLOR_PALETTE.section, CERT_COLOR_PALETTE.border);
-    doc.font('Helvetica-Bold').fontSize(12).fillColor(CERT_COLOR_PALETTE.text)
-      .text(label, margin + 10, cursorY + 6, { width: innerWidth - 20 });
-    doc.restore();
-    cursorY += 28;
-  };
-
-  const drawCheckboxItem = (x, y, width, label, checked) => {
-    const boxSize = 12;
-    doc.save();
-    doc.lineWidth(1);
-    doc.strokeColor(checked ? CERT_COLOR_PALETTE.accent : CERT_COLOR_PALETTE.border)
-      .rect(x, y, boxSize, boxSize)
-      .stroke();
-    if (checked) {
-      doc.moveTo(x + 2, y + boxSize / 2)
-        .lineTo(x + boxSize / 2 - 1, y + boxSize - 2)
-        .lineTo(x + boxSize - 2, y + 2)
-        .stroke();
-    }
-    doc.font('Helvetica').fontSize(10).fillColor(CERT_COLOR_PALETTE.text)
-      .text(label, x + boxSize + 6, y - 2, { width: width - boxSize - 6 });
-    doc.restore();
-  };
-
-  const drawCheckboxRow = (items, options = {}) => {
-    const startX = options.startX ?? margin;
-    const totalWidth = options.totalWidth ?? innerWidth;
-    const gap = options.gap ?? 20;
-    const rowY = options.y ?? cursorY;
-    const widthPerItem = items.length > 0
-      ? (totalWidth - gap * (items.length - 1)) / items.length
-      : totalWidth;
-    items.forEach((item, index) => {
-      const label = item.detail ? `${item.label}: ${displayValue(item.detail)}` : item.label;
-      drawCheckboxItem(startX + index * (widthPerItem + gap), rowY, widthPerItem, label, Boolean(item.checked));
-    });
-    cursorY = Math.max(cursorY, rowY + (options.height ?? 20) + (options.afterGap ?? 6));
-  };
-
-  const drawNoteBlock = () => {
-    doc.font('Helvetica-Bold').fontSize(11).fillColor(CERT_COLOR_PALETTE.text)
-      .text('Nota:', margin, cursorY);
-    cursorY += 14;
-    doc.font('Helvetica').fontSize(10).fillColor(CERT_COLOR_PALETTE.text)
-      .text('Este permiso no es válido si:', margin, cursorY);
-    cursorY += 14;
-    const notaTexto = [
-      'a) No está debidamente firmado y sellado por los funcionarios autorizados por MSP y DNCD.',
-      'b) Los renglones que lo conforman no están completos.',
-      'c) Si se determina que los datos suministrados para su autorización no corresponden con la verdad.',
-      'd) Tiene tachaduras o borraduras en su contenido.'
-    ].join('\n');
-    doc.text(notaTexto, margin + 16, cursorY, { width: innerWidth - 16, lineGap: 2 });
-    cursorY = doc.y + 12;
-    doc.font('Helvetica-Bold').fontSize(11).text('Advertencia:', margin, cursorY);
-    cursorY += 14;
-    doc.font('Helvetica').fontSize(10)
-      .text('El código Penal de la República Dominicana sanciona la falsificación, alteración o falsedad de escritura técnica o pública.', margin, cursorY, { width: innerWidth });
-    cursorY = doc.y + 20;
+  const displayDate = (value) => {
+    const formatted = formatDateEs(value);
+    return formatted || 'NO ESPECIFICADA';
   };
 
   doc.save();
   doc.rect(0, 0, doc.page.width, doc.page.height).fill(CERT_COLOR_PALETTE.background);
   doc.restore();
 
-  doc.font('Helvetica-Bold').fontSize(22).fillColor(CERT_COLOR_PALETTE.text)
-    .text('SOLICITUD', margin, cursorY, { width: innerWidth, align: 'center' });
-  cursorY += 24;
-  doc.fontSize(12)
-    .text('CERTIFICADO DE INSCRIPCIÓN DE SUSTANCIAS CONTROLADAS', margin, cursorY, { width: innerWidth, align: 'center' });
-  cursorY += 14;
-  doc.text('- CLASE A -', margin, cursorY, { width: innerWidth, align: 'center' });
-  cursorY += 24;
+  doc.font('Helvetica-Bold').fontSize(24).fillColor(CERT_COLOR_PALETTE.text)
+    .text(heading.toUpperCase(), margin, cursorY, { width: innerWidth, align: 'center' });
+  cursorY += 32;
+  doc.font('Helvetica').fontSize(12).fillColor(CERT_COLOR_PALETTE.label)
+    .text(subheading, margin, cursorY, { width: innerWidth, align: 'center' });
+  cursorY += 20;
+  doc.font('Helvetica-Bold').fontSize(12).fillColor(CERT_COLOR_PALETTE.accent)
+    .text(`CLASE ${claseLabel}`, margin, cursorY, { width: innerWidth, align: 'center' });
+  cursorY += 26;
 
-  doc.font('Helvetica').fontSize(10)
-    .text(`No. CIDC: ${displayValue(data.numeroCIDC)}`, margin, cursorY, { width: innerWidth, align: 'right' });
-  cursorY += 12;
-  doc.text(`Expediente: ${displayValue(data.numeroExpediente)}`, margin, cursorY, { width: innerWidth, align: 'right' });
-  cursorY += 18;
+  doc.font('Helvetica').fontSize(10).fillColor(CERT_COLOR_PALETTE.label)
+    .text(`Fecha de emisión: ${displayDate(data.fechaEmision)}`, margin, cursorY, { width: innerWidth, align: 'right' });
+  cursorY += 16;
 
-  drawSectionHeader('IDENTIFICACIÓN');
-  drawFieldRow([
-    { label: '1) Nombre del Profesional', value: data.nombreProfesional }
-  ], { height: 34 });
-  drawFieldRow([
-    { label: '2) Dirección / Correo Postal (P.O.B)', value: data.direccionPostal }
-  ], { height: 34 });
-  drawFieldRow([
-    { label: '3) Cédula de Identidad y Electoral', value: data.cedula },
-    { label: '4) Exequátur', value: data.exequatur },
-    { label: '5) No. Colegiatura', value: data.colegiatura }
-  ]);
-  drawFieldRow([
-    { label: '6) Teléfono(s) Residencial', value: data.telefonoResidencial },
-    { label: '7) Celular', value: data.celular }
-  ]);
-  drawFieldRow([
-    { label: '8) Lugar de Trabajo', value: data.lugarTrabajo },
-    { label: '9) E-mail', value: data.email }
-  ], { height: 30 });
-  drawFieldRow([
-    { label: '10) Dirección del Lugar de Trabajo', value: data.direccionTrabajo, span: 2 },
-    { label: '11) Teléfono(s)', value: data.telefonoTrabajo, span: 1 }
-  ], { height: 34, gap: 10 });
+  const drawField = (label, value, options = {}) => {
+    const height = options.height ?? 46;
+    doc.save();
+    doc.rect(margin, cursorY, innerWidth, height)
+      .fillColor(panelFill)
+      .fill();
+    doc.rect(margin, cursorY, innerWidth, height)
+      .lineWidth(0.8)
+      .strokeColor(CERT_COLOR_PALETTE.border)
+      .stroke();
+    doc.font('Helvetica-Bold').fontSize(11).fillColor(CERT_COLOR_PALETTE.label)
+      .text(label.toUpperCase(), margin + 14, cursorY + 8, { width: innerWidth - 28 });
+    doc.font('Helvetica').fontSize(13).fillColor(CERT_COLOR_PALETTE.text)
+      .text(value, margin + 14, cursorY + 24, { width: innerWidth - 28 });
+    doc.restore();
+    cursorY += height + 12;
+  };
 
-  cursorY += 6;
-  doc.font('Helvetica-Bold').fontSize(11).fillColor(CERT_COLOR_PALETTE.text)
-    .text('12) PROFESIÓN', margin, cursorY);
-  cursorY += 14;
-  const profesionItems = [
-    { label: 'a) Medicina', checked: data.profesionChecks.medicina },
-    { label: 'b) Medicina Veterinaria', checked: data.profesionChecks.veterinaria },
-    { label: 'c) Odontología', checked: data.profesionChecks.odontologia },
+  const infoFields = [
+    { label: 'Nombre', value: displayValue(data.nombreCertificado) },
+    { label: 'Dirección', value: displayValue(data.direccionPrincipal || data.direccionAlterna) },
+    { label: 'Ciudad', value: displayValue(data.ciudad) },
+    { label: 'Fecha de expiración', value: displayDate(data.fechaExpiracion) },
+    { label: 'Actividad', value: displayValue(data.actividadPrincipal) },
+    { label: 'Categoría', value: displayValue(data.categoriaTexto) },
     {
-      label: 'd) Otra, especifique',
-      checked: data.profesionChecks.otra,
-      detail: data.profesionChecks.otra ? data.profesionDescripcion : ''
+      label: 'Número de CIDC',
+      value: displayValue(data.numeroCIDC || data.numeroExpediente || data.numeroCidcAnterior)
     }
   ];
-  chunkArray(profesionItems, 2).forEach((row) => {
-    drawCheckboxRow(row, { gap: 30, height: 20 });
-  });
 
-  doc.font('Helvetica-Bold').fontSize(11).text('13) ESTATUS', margin, cursorY);
-  cursorY += 14;
-  const estatusItems = [
-    { label: 'a) Primera Solicitud', checked: data.estatus.primera },
-    { label: 'b) Renovación', checked: data.estatus.renovacion },
-    { label: 'c) Solicitud anterior negada', checked: data.estatus.anteriorNegada },
-    { label: 'd) CIDC reprobado, suspendido', checked: data.estatus.cidcReprobado },
-    {
-      label: 'e) Otra, especifique',
-      checked: data.estatus.otra,
-      detail: data.estatus.otra ? data.estatus.otraDetalle : ''
-    }
-  ];
-  chunkArray(estatusItems, 2).forEach((row) => {
-    drawCheckboxRow(row, { gap: 24, height: 20 });
-  });
+  infoFields.forEach((field) => drawField(field.label, field.value));
 
-  doc.font('Helvetica-Bold').fontSize(10).text('Categorías de Drogas Controladas que tendrá derecho a prescribir o administrar:', margin, cursorY);
-  cursorY += 12;
-  const categoriaItems = [
-    { label: 'I', checked: data.categorias.I },
-    { label: 'II', checked: data.categorias.II },
-    { label: 'III', checked: data.categorias.III },
-    { label: 'IV', checked: data.categorias.IV }
-  ];
-  drawCheckboxRow(categoriaItems, { gap: 36, height: 20 });
-
-  drawFieldRow([
-    { label: 'Si su respuesta fue b o d, No. CIDC', value: data.numeroCidcAnterior || data.numeroCIDC },
-    { label: 'Si su respuesta fue c, d o e explique el motivo en el reverso (Renglón No. 13)', value: data.motivoDetalle }
-  ], { height: 36 });
-
-  drawFieldRow([
-    { label: '14) SUMA A PAGAR: RD$', value: formatCurrencyDOP(data.sumaPagar) || '' },
-    { label: 'Fecha solicitud', value: formatDateEs(data.fechaSolicitud) },
-    { label: 'Firma Interesado', value: '' }
-  ], { height: 32 });
-
-  const internalTop = cursorY;
-  const leftWidth = innerWidth * 0.32;
-  const internalHeight = 32;
-  doc.save();
-  doc.rect(margin, internalTop, leftWidth, internalHeight)
-    .fill(CERT_COLOR_PALETTE.section);
-  doc.rect(margin, internalTop, leftWidth, internalHeight)
+  cursorY += 24;
+  const signatureLineStart = margin + innerWidth * 0.2;
+  const signatureLineEnd = margin + innerWidth * 0.8;
+  doc.moveTo(signatureLineStart, cursorY)
+    .lineTo(signatureLineEnd, cursorY)
+    .lineWidth(1)
     .strokeColor(CERT_COLOR_PALETTE.border)
     .stroke();
+  cursorY += 10;
   doc.font('Helvetica-Bold').fontSize(11).fillColor(CERT_COLOR_PALETTE.text)
-    .text('SÓLO PARA USO INTERNO', margin + 10, internalTop + 10, { width: leftWidth - 16 });
-  doc.restore();
-
-  drawFieldRow([
-    { label: 'Fecha aprobado', value: formatDateEs(data.fechaAprobado) },
-    { label: 'No. Factura', value: data.noFactura },
-    { label: 'Fecha pago', value: formatDateEs(data.fechaPago) }
-  ], {
-    height: internalHeight,
-    startX: margin + leftWidth + 10,
-    totalWidth: innerWidth - leftWidth - 10,
-    y: internalTop,
-    afterGap: 10
-  });
-
-  drawNoteBlock();
+    .text('DIRECCIÓN NACIONAL DE CONTROL DE DROGAS', margin, cursorY, { width: innerWidth, align: 'center' });
+  cursorY += 16;
+  doc.font('Helvetica').fontSize(9).fillColor(CERT_COLOR_PALETTE.label)
+    .text('Firma autorizada DNCD', margin, cursorY, { width: innerWidth, align: 'center' });
 };
 
 //Controlador de Certificados
@@ -668,7 +552,7 @@ export class CertificadosController {
         res.status(200).send(pdfBuffer);
       });
 
-      renderCertificadoClaseA(doc, payload);
+      renderCertificadoPorClase(doc, payload);
       doc.end();
     } catch (error) {
       next(error);
@@ -733,7 +617,7 @@ export class CertificadosController {
         res.status(200).send(pdfBuffer);
       });
 
-      renderCertificadoClaseA(doc, payload);
+      renderCertificadoPorClase(doc, payload);
       doc.end();
     } catch (error) {
       next(error);

@@ -50,7 +50,7 @@ const DashboardSolicitante = () => {
   }
 
   const resolveNumeroSolicitud = (solicitud) =>
-    solicitud.numero_solicitud || solicitud.numero_expediente || `SOL-${solicitud.id_solicitud}`
+    solicitud.numero_expediente || solicitud.numero_solicitud || `SOL-${solicitud.id_solicitud}`
 
   const resolveNombreServicio = (solicitud) =>
     solicitud.nombre_servicio || solicitud.nombre_tramite || `Servicio #${solicitud.id_tipo_servicio}`

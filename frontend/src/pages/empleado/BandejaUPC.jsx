@@ -127,7 +127,7 @@ const BandejaUPC = () => {
               {solicitudes.map((solicitud) => (
                 <tr key={solicitud.id_solicitud}>
                   <td className="font-semibold text-primary-950">
-                    {solicitud.numero_solicitud || solicitud.numero_expediente || `SOL-${solicitud.id_solicitud}`}
+                    {solicitud.numero_expediente || solicitud.numero_solicitud || `SOL-${solicitud.id_solicitud}`}
                   </td>
                   <td>
                     <p className="font-semibold text-primary-950">{solicitud.nombre_solicitante || 'Sin nombre'}</p>

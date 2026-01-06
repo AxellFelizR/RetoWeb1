@@ -710,7 +710,7 @@ const AdminPanel = () => {
               {!auditoriaLoading && auditoria.length > 0 && auditoria.map((solicitud) => (
                 <tr key={solicitud.id_solicitud} className="border-b last:border-0">
                   <td className="py-3 font-semibold text-primary-950">
-                    {solicitud.numero_solicitud || solicitud.numero_expediente || `SOL-${solicitud.id_solicitud}`}
+                    {solicitud.numero_expediente || solicitud.numero_solicitud || `SOL-${solicitud.id_solicitud}`}
                   </td>
                   <td className="py-3">
                     <p className="font-semibold">{solicitud.nombre_servicio || 'Servicio no disponible'}</p>

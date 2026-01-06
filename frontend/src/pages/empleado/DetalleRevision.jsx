@@ -239,6 +239,47 @@ const DetalleRevision = () => {
     return buildCamposResumen(solicitud.datos_servicio, serviceConfig)
   }, [solicitud, serviceConfig])
 
+  useEffect(() => {
+    try {
+      if (!camposResumen || camposResumen.length === 0) {
+        setCamposRevision([])
+        return
+      }
+
+      // Mapear campos del resumen con información de revisión del servidor
+      const revisionServidor_safe = Array.isArray(revisionServidor) ? revisionServidor : []
+      const camposConRevision = camposResumen.map((campo) => {
+        const fieldKey = campo?.key || ''
+        const fieldLabel = campo?.label || ''
+        
+        // Buscar coincidencia en revisionServidor
+        let revisionExistente = null
+        if (revisionServidor_safe.length > 0) {
+          revisionExistente = revisionServidor_safe.find((rev) => {
+            if (!rev) return false
+            return (
+              (rev.nombre_campo && rev.nombre_campo === fieldKey) ||
+              (rev.etiqueta_campo && rev.etiqueta_campo === fieldLabel)
+            )
+          })
+        }
+
+        return {
+          key: fieldKey,
+          label: fieldLabel,
+          valor: campo?.valor || '',
+          estado: revisionExistente?.estado_campo || ESTADO_CAMPO.PENDIENTE,
+          comentario: revisionExistente?.comentario_revision || ''
+        }
+      })
+
+      setCamposRevision(camposConRevision)
+    } catch (error) {
+      console.error('Error en useEffect de camposRevision:', error)
+      setCamposRevision([])
+    }
+  }, [camposResumen, revisionServidor])
+
   const generarPdfResolucion = useCallback(async () => {
     if ((!esDireccion && !esDncd) || !solicitud) {
       return
